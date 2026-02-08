@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout module
+        uses: actions/checkout@v4
+
+      - name: Checkout trx-cpp
+        uses: actions/checkout@v4
+        with:
+          repository: trx-cpp/trx-cpp
+          path: trx-cpp
+          fetch-depth: 1
+
+      - name: Build and install trx-cpp
+        run: >
+          cmake -S trx-cpp -B trx-cpp-build
+          -DTRX_BUILD_TESTS=OFF
+          -DTRX_BUILD_EXAMPLES=OFF
+          -DTRX_ENABLE_INSTALL=ON
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_INSTALL_PREFIX=${GITHUB_WORKSPACE}/trx-cpp-install
+          && cmake --build trx-cpp-build --parallel 2
+          && cmake --build trx-cpp-build --target install
+
+      - name: Checkout ITK
+        uses: actions/checkout@v4
+        with:
+          repository: InsightSoftwareConsortium/ITK
+          path: ITK
+          fetch-depth: 1
+
+      - name: Configure ITK with external module
+        run: >
+          cmake -S ITK -B ITK-build
+          -DBUILD_TESTING=OFF
+          -DITK_BUILD_DEFAULT_MODULES=ON
+          -DITK_EXTERNAL_MODULES=${GITHUB_WORKSPACE}
+          -DModule_TractographyTRX=ON
+          -Dtrx-cpp_DIR=${GITHUB_WORKSPACE}/trx-cpp-install/lib/cmake/trx-cpp
+
+      - name: Build ITK with external module
+        run: cmake --build ITK-build --parallel 2
