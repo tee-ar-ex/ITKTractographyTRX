@@ -1,5 +1,9 @@
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/trx-cpp/CMakeLists.txt")
-  if(NOT TARGET trx-cpp::trx)
+option(TractographyTRX_FETCH_TRX_CPP "Fetch trx-cpp if not found" ON)
+set(TRX_CPP_GIT_TAG "main" CACHE STRING "trx-cpp git tag")
+
+find_package(trx-cpp QUIET)
+if(NOT trx-cpp_FOUND)
+  if(TractographyTRX_FETCH_TRX_CPP)
     if(NOT DEFINED TRX_BUILD_TESTS)
       set(TRX_BUILD_TESTS OFF CACHE BOOL "Build trx-cpp tests")
     endif()
@@ -9,10 +13,20 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/trx-cpp/CMakeLists.txt")
     if(NOT DEFINED TRX_BUILD_BENCHMARKS)
       set(TRX_BUILD_BENCHMARKS OFF CACHE BOOL "Build trx-cpp benchmarks")
     endif()
-    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/trx-cpp" "${CMAKE_BINARY_DIR}/trx-cpp")
+    if(CMAKE_VERSION VERSION_LESS 3.11)
+      message(FATAL_ERROR "trx-cpp not found and CMake < 3.11 cannot fetch it. Set trx-cpp_DIR or update CMake.")
+    endif()
+    include(FetchContent)
+    message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
+    FetchContent_Declare(
+      trx_cpp
+      GIT_REPOSITORY https://github.com/tee-ar-ex/trx-cpp.git
+      GIT_TAG ${TRX_CPP_GIT_TAG}
+    )
+    FetchContent_MakeAvailable(trx_cpp)
+  else()
+    find_package(trx-cpp REQUIRED)
   endif()
-else()
-  find_package(trx-cpp REQUIRED)
 endif()
 
 # When this module is loaded by an app, load trx-cpp too.

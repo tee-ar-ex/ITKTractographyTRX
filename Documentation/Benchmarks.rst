@@ -21,13 +21,7 @@ The recommended reference dataset is the same HCP-derived TRX file used by
 Build (standalone)
 ------------------
 
-If you are using the bundled ``trx-cpp`` submodule:
-
-.. code-block:: bash
-
-  git submodule update --init --recursive
-
-Then configure and build with benchmarks enabled:
+Configure and build with benchmarks enabled:
 
 .. code-block:: bash
 
@@ -37,7 +31,8 @@ Then configure and build with benchmarks enabled:
   cmake --build build-release --target bench_trx_itk_realdata
 
 If ``trx-cpp`` or Google Benchmark are installed elsewhere, make sure CMake can
-find them using ``trx-cpp_DIR`` and ``benchmark_DIR``.
+find them using ``trx-cpp_DIR`` and ``benchmark_DIR``. Otherwise, ``trx-cpp`` is
+fetched automatically by default.
 
 Run the benchmarks
 ------------------

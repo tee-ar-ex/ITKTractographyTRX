@@ -31,12 +31,8 @@ Key Types
 Build
 -----
 
-TractographyTRX requires ITK and ``trx-cpp``. If you use the bundled submodule,
-initialize it first:
-
-.. code-block:: bash
-
-  git submodule update --init --recursive
+TractographyTRX requires ITK and ``trx-cpp``. The build can fetch ``trx-cpp``
+automatically, or you can make it discoverable via ``trx-cpp_DIR``.
 
 Standalone build (requires ITK):
 
@@ -46,7 +42,7 @@ Standalone build (requires ITK):
   cmake --build build
 
 To build as an ITK remote module, configure ITK with the module enabled and
-``trx-cpp`` discoverable (via the submodule or ``trx-cpp_DIR``).
+``trx-cpp`` discoverable (or allow it to be fetched).
 
 Coordinate Systems
 ------------------

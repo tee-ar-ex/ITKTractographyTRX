@@ -15,13 +15,8 @@ ITK/InsightToolkit reStructuredText style. Start with
 ### Dependencies
 
 TractographyTRX depends on `trx-cpp`, which provides the `trx-cpp::trx` CMake
-target. Ensure `trx-cpp` is discoverable via `find_package(trx-cpp)`.
-
-If using the bundled submodule:
-
-```
-git submodule update --init --recursive
-```
+target. It is fetched automatically by default, or you can make it discoverable
+via `find_package(trx-cpp)` (e.g. by setting `trx-cpp_DIR`).
 
 Benchmark builds additionally require Google Benchmark (`benchmark::benchmark`).
 
