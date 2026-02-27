@@ -41,9 +41,8 @@ if(NOT trx-cpp_FOUND)
         GIT_TAG v1.11.4
       )
       FetchContent_MakeAvailable(libzip)
-      if(NOT libzip_DIR)
-        set(libzip_DIR "${libzip_BINARY_DIR}" CACHE PATH "libzip config path")
-      endif()
+      set(libzip_DIR "${libzip_BINARY_DIR}" CACHE PATH "libzip config path" FORCE)
+      list(PREPEND CMAKE_PREFIX_PATH "${libzip_BINARY_DIR}")
     endif()
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
