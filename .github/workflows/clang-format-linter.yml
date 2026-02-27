@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - master
   pull_request:
 
 jobs:
@@ -13,4 +12,4 @@ jobs:
 
     steps:
       - uses: actions/checkout@v1
-      - uses: InsightSoftwareConsortium/ITKClangFormatLinterAction@master
+      - uses: InsightSoftwareConsortium/ITKClangFormatLinterAction@main
