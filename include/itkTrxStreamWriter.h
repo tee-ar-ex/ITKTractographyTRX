@@ -23,7 +23,10 @@
 #include "itkFixedArray.h"
 #include "itkMatrix.h"
 #include "itkObject.h"
+#include "itkObjectFactory.h"
 #include "itkPoint.h"
+
+#include "vnl/vnl_matrix.h"
 
 #include <map>
 #include <memory>
@@ -74,6 +77,10 @@ public:
   itkGetConstMacro(UseCompression, bool);
   itkBooleanMacro(UseCompression);
 
+  /** Optional buffer size (bytes) for streaming positions. */
+  itkSetMacro(PositionsBufferMaxBytes, size_t);
+  itkGetConstMacro(PositionsBufferMaxBytes, size_t);
+
   void
   SetVoxelToRasMatrix(const MatrixType & matrix);
 
@@ -94,6 +101,13 @@ public:
   /** Add a streamline with per-streamline and per-vertex values. */
   void
   PushStreamline(const StreamlineType &                                       points,
+                 const std::map<std::string, double> &                        dpsValues = {},
+                 const std::map<std::string, std::vector<double>> &           dpvValues = {},
+                 const std::vector<std::string> &                             groupNames = {});
+
+  /** Add a streamline provided as an N-by-3 matrix of LPS coordinates. */
+  void
+  PushStreamline(const vnl_matrix<double> &                                   points,
                  const std::map<std::string, double> &                        dpsValues = {},
                  const std::map<std::string, std::vector<double>> &           dpvValues = {},
                  const std::vector<std::string> &                             groupNames = {});
@@ -126,8 +140,12 @@ private:
   std::vector<float>
   FlattenPointsToRas(const StreamlineType & points) const;
 
+  std::vector<float>
+  FlattenPointsToRas(const vnl_matrix<double> & points) const;
+
   std::string m_FileName{};
   bool        m_UseCompression{ false };
+  size_t      m_PositionsBufferMaxBytes{ 0 };
 
   bool       m_HasVoxelToRas{ false };
   bool       m_HasVoxelToLps{ false };

@@ -1,4 +1,19 @@
-find_package(trx-cpp REQUIRED)
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/trx-cpp/CMakeLists.txt")
+  if(NOT TARGET trx-cpp::trx)
+    if(NOT DEFINED TRX_BUILD_TESTS)
+      set(TRX_BUILD_TESTS OFF CACHE BOOL "Build trx-cpp tests")
+    endif()
+    if(NOT DEFINED TRX_BUILD_EXAMPLES)
+      set(TRX_BUILD_EXAMPLES OFF CACHE BOOL "Build trx-cpp examples")
+    endif()
+    if(NOT DEFINED TRX_BUILD_BENCHMARKS)
+      set(TRX_BUILD_BENCHMARKS OFF CACHE BOOL "Build trx-cpp benchmarks")
+    endif()
+    add_subdirectory("${CMAKE_CURRENT_LIST_DIR}/trx-cpp" "${CMAKE_BINARY_DIR}/trx-cpp")
+  endif()
+else()
+  find_package(trx-cpp REQUIRED)
+endif()
 
 # When this module is loaded by an app, load trx-cpp too.
 set(TractographyTRX_EXPORT_CODE_INSTALL "

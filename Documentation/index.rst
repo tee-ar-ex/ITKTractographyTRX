@@ -5,3 +5,4 @@ TractographyTRX Remote Module
    :maxdepth: 2
 
    Overview
+   Benchmarks

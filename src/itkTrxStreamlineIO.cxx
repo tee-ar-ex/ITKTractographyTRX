@@ -35,15 +35,15 @@ TrxStreamlineIO::CanReadFile(const char * filename)
   }
 
   const std::string name(filename);
-  if (!itksys::SystemTools::FileExists(name, true))
-  {
-    return false;
-  }
-
   if (itksys::SystemTools::FileIsDirectory(name))
   {
     const std::string headerPath = itksys::SystemTools::CollapseFullPath("header.json", name);
     return itksys::SystemTools::FileExists(headerPath, true);
+  }
+
+  if (!itksys::SystemTools::FileExists(name, true))
+  {
+    return false;
   }
 
   const std::string ext = itksys::SystemTools::GetFilenameLastExtension(name);

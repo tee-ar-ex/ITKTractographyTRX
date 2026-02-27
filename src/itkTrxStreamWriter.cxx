@@ -110,6 +110,10 @@ TrxStreamWriter::EnsureStream()
   if (!m_Stream)
   {
     m_Stream = std::make_unique<trx::TrxStream>("float32");
+    if (m_PositionsBufferMaxBytes > 0)
+    {
+      m_Stream->set_positions_buffer_max_bytes(m_PositionsBufferMaxBytes);
+    }
     if (m_HasVoxelToRas || m_HasVoxelToLps)
     {
       MatrixType ras = m_HasVoxelToRas ? m_VoxelToRasMatrix : ConvertVoxelToRasFromLps(m_VoxelToLpsMatrix);
@@ -121,19 +125,12 @@ TrxStreamWriter::EnsureStream()
           affine(row, col) = static_cast<float>(ras[row][col]);
         }
       }
-      auto headerObj = m_Stream->header.object_items();
-      headerObj["VOXEL_TO_RASMM"] = std::vector<std::vector<float>>{
-        { affine(0, 0), affine(0, 1), affine(0, 2), affine(0, 3) },
-        { affine(1, 0), affine(1, 1), affine(1, 2), affine(1, 3) },
-        { affine(2, 0), affine(2, 1), affine(2, 2), affine(2, 3) },
-        { affine(3, 0), affine(3, 1), affine(3, 2), affine(3, 3) } };
-      m_Stream->header = json(headerObj);
+      m_Stream->set_voxel_to_rasmm(affine);
     }
     if (m_HasDimensions)
     {
-      auto headerObj = m_Stream->header.object_items();
-      headerObj["DIMENSIONS"] = std::vector<uint16_t>{ m_Dimensions[0], m_Dimensions[1], m_Dimensions[2] };
-      m_Stream->header = json(headerObj);
+      std::array<uint16_t, 3> dims{ m_Dimensions[0], m_Dimensions[1], m_Dimensions[2] };
+      m_Stream->set_dimensions(dims);
     }
   }
 }
@@ -207,6 +204,28 @@ TrxStreamWriter::FlattenPointsToRas(const StreamlineType & points) const
   return xyz;
 }
 
+std::vector<float>
+TrxStreamWriter::FlattenPointsToRas(const vnl_matrix<double> & points) const
+{
+  if (points.columns() != 3)
+  {
+    itkExceptionMacro("Streamline matrix must have 3 columns.");
+  }
+  std::vector<float> xyz;
+  xyz.reserve(static_cast<size_t>(points.rows()) * 3);
+  for (unsigned int i = 0; i < points.rows(); ++i)
+  {
+    const double x = points(i, 0);
+    const double y = points(i, 1);
+    const double z = points(i, 2);
+    // LPS -> RAS
+    xyz.push_back(static_cast<float>(-x));
+    xyz.push_back(static_cast<float>(-y));
+    xyz.push_back(static_cast<float>(z));
+  }
+  return xyz;
+}
+
 void
 TrxStreamWriter::PushStreamline(const StreamlineType &                             points,
                                 const std::map<std::string, double> &              dpsValues,
@@ -245,6 +264,47 @@ TrxStreamWriter::PushStreamline(const StreamlineType &                          
   }
 
   m_VertexCount += points.size();
+  ++m_StreamlineCount;
+}
+
+void
+TrxStreamWriter::PushStreamline(const vnl_matrix<double> &                          points,
+                                const std::map<std::string, double> &               dpsValues,
+                                const std::map<std::string, std::vector<double>> &  dpvValues,
+                                const std::vector<std::string> &                    groupNames)
+{
+  if (m_Finalized)
+  {
+    itkExceptionMacro("Cannot push streamline after finalize.");
+  }
+  EnsureStream();
+
+  ValidateDpsValues(dpsValues);
+  ValidateDpvValues(dpvValues, points.rows());
+
+  const auto xyz = FlattenPointsToRas(points);
+  m_Stream->push_streamline(xyz);
+
+  for (const auto & kv : m_Dps)
+  {
+    auto & field = m_Dps[kv.first];
+    const auto it = dpsValues.find(kv.first);
+    field.values.push_back(it->second);
+  }
+
+  for (const auto & kv : m_Dpv)
+  {
+    auto & field = m_Dpv[kv.first];
+    const auto it = dpvValues.find(kv.first);
+    field.values.insert(field.values.end(), it->second.begin(), it->second.end());
+  }
+
+  for (const auto & group : groupNames)
+  {
+    m_Groups[group].push_back(static_cast<uint32_t>(m_StreamlineCount));
+  }
+
+  m_VertexCount += points.rows();
   ++m_StreamlineCount;
 }
 

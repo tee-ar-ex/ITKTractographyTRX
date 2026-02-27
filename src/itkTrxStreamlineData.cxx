@@ -20,7 +20,9 @@
 #include <trx/trx.h>
 
 #include <algorithm>
+#include <functional>
 #include <limits>
+#include <random>
 #include <stdexcept>
 #include <type_traits>
 
@@ -45,6 +47,12 @@ public:
   virtual TrxStreamlineData::PointType
   GetPointLpsAtIndex(TrxStreamlineData::SizeValueType index) const = 0;
   virtual void
+  ForEachStreamlineRaw(
+    const std::function<void(TrxStreamlineData::SizeValueType,
+                             const void *,
+                             TrxStreamlineData::SizeValueType,
+                             TrxStreamlineData::CoordinateType)> & fn) const = 0;
+  virtual void
   Save(const std::string & filename, bool useCompression) const = 0;
   virtual std::shared_ptr<TrxHandleBase>
   SubsetStreamlines(const std::vector<uint32_t> & streamlineIds, bool buildCacheForResult) const = 0;
@@ -52,6 +60,16 @@ public:
   QueryAabb(const std::array<float, 3> & minCorner,
             const std::array<float, 3> & maxCorner,
             bool                         buildCacheForResult) const = 0;
+  virtual std::shared_ptr<TrxHandleBase>
+  QueryAabb(const std::array<float, 3> & minCorner,
+            const std::array<float, 3> & maxCorner,
+            bool                         buildCacheForResult,
+            size_t                       maxStreamlines,
+            uint32_t                     rngSeed) const = 0;
+  virtual const std::vector<std::array<Eigen::half, 6>> &
+  GetOrBuildStreamlineAabbs() const = 0;
+  virtual void
+  InvalidateAabbCache() const = 0;
 };
 
 namespace
@@ -190,6 +208,37 @@ public:
   }
 
   void
+  ForEachStreamlineRaw(
+    const std::function<void(TrxStreamlineData::SizeValueType,
+                             const void *,
+                             TrxStreamlineData::SizeValueType,
+                             TrxStreamlineData::CoordinateType)> & fn) const override
+  {
+    if (!m_Trx->streamlines || m_Trx->streamlines->_offsets.size() == 0)
+    {
+      return;
+    }
+    const auto & offsets = m_Trx->streamlines->_offsets;
+    const auto * data = m_Trx->streamlines->_data.data();
+    const size_t count = static_cast<size_t>(offsets.size() - 1);
+    for (size_t i = 0; i < count; ++i)
+    {
+      const uint64_t start = static_cast<uint64_t>(offsets(static_cast<Eigen::Index>(i), 0));
+      const uint64_t end = static_cast<uint64_t>(offsets(static_cast<Eigen::Index>(i + 1), 0));
+      if (end <= start)
+      {
+        fn(static_cast<TrxStreamlineData::SizeValueType>(i), nullptr, 0, GetCoordinateType());
+        continue;
+      }
+      const void * ptr = static_cast<const void *>(data + start * 3);
+      fn(static_cast<TrxStreamlineData::SizeValueType>(i),
+         ptr,
+         static_cast<TrxStreamlineData::SizeValueType>(end - start),
+         GetCoordinateType());
+    }
+  }
+
+  void
   Save(const std::string & filename, bool useCompression) const override
   {
     const zip_uint32_t compression = useCompression ? ZIP_CM_DEFLATE : ZIP_CM_STORE;
@@ -212,6 +261,34 @@ public:
     return std::make_shared<TypedTrxHandle<DT>>(std::move(subset));
   }
 
+  std::shared_ptr<TrxHandleBase>
+  QueryAabb(const std::array<float, 3> & minCorner,
+            const std::array<float, 3> & maxCorner,
+            bool                         buildCacheForResult,
+            size_t                       maxStreamlines,
+            uint32_t                     rngSeed) const override
+  {
+    auto subset = m_Trx->query_aabb(minCorner,
+                                    maxCorner,
+                                    nullptr,
+                                    buildCacheForResult,
+                                    maxStreamlines,
+                                    rngSeed);
+    return std::make_shared<TypedTrxHandle<DT>>(std::move(subset));
+  }
+
+  const std::vector<std::array<Eigen::half, 6>> &
+  GetOrBuildStreamlineAabbs() const override
+  {
+    return m_Trx->get_or_build_streamline_aabbs();
+  }
+
+  void
+  InvalidateAabbCache() const override
+  {
+    m_Trx->invalidate_aabb_cache();
+  }
+
 private:
   std::unique_ptr<trx::TrxFile<DT>> m_Trx;
 };
@@ -223,12 +300,12 @@ LoadTrxHandle(const std::string & path)
   switch (dtype)
   {
     case trx::TrxScalarType::Float16:
-      return std::make_shared<TypedTrxHandle<Eigen::half>>(trx::TrxFile<Eigen::half>::load(path));
+      return std::make_shared<TypedTrxHandle<Eigen::half>>(trx::load<Eigen::half>(path));
     case trx::TrxScalarType::Float64:
-      return std::make_shared<TypedTrxHandle<double>>(trx::TrxFile<double>::load(path));
+      return std::make_shared<TypedTrxHandle<double>>(trx::load<double>(path));
     case trx::TrxScalarType::Float32:
     default:
-      return std::make_shared<TypedTrxHandle<float>>(trx::TrxFile<float>::load(path));
+      return std::make_shared<TypedTrxHandle<float>>(trx::load<float>(path));
   }
 }
 
@@ -309,6 +386,164 @@ TrxStreamlineData::GetStreamlineRange(SizeValueType streamlineIndex) const
   return StreamlinePointRange(this, start, end);
 }
 
+bool
+TrxStreamlineData::GetStreamlineView(SizeValueType streamlineIndex, StreamlineView & view) const
+{
+  if (!m_PositionsLoaded || m_Offsets.empty())
+  {
+    return false;
+  }
+  if (streamlineIndex >= m_Offsets.size())
+  {
+    itkExceptionMacro("Streamline index out of range.");
+  }
+
+  const SizeValueType start = static_cast<SizeValueType>(m_Offsets[streamlineIndex]);
+  const SizeValueType end = (streamlineIndex + 1 < m_Offsets.size())
+                              ? static_cast<SizeValueType>(m_Offsets[streamlineIndex + 1])
+                              : m_NumberOfVertices;
+  if (end <= start)
+  {
+    view = StreamlineView{};
+    return true;
+  }
+
+  auto loadView = [&](const auto & positions) {
+    using Scalar = typename std::remove_reference_t<decltype(positions)>::value_type;
+    view.xyz = static_cast<const void *>(positions.data() + start * 3);
+    view.pointCount = static_cast<SizeValueType>(end - start);
+    if constexpr (std::is_same_v<Scalar, Eigen::half>)
+    {
+      view.coordinateType = CoordinateType::Float16;
+    }
+    else if constexpr (std::is_same_v<Scalar, double>)
+    {
+      view.coordinateType = CoordinateType::Float64;
+    }
+    else
+    {
+      view.coordinateType = CoordinateType::Float32;
+    }
+    view.coordinateSystem = m_CoordinateSystem;
+  };
+  std::visit(loadView, m_Positions);
+  return true;
+}
+
+void
+TrxStreamlineData::ForEachStreamlineChunked(
+  const std::function<void(SizeValueType, const void *, SizeValueType, CoordinateType, CoordinateSystem)> & fn,
+  CoordinateSystem requestedSystem) const
+{
+  if (!fn)
+  {
+    return;
+  }
+
+  if (m_PositionsLoaded && !m_Offsets.empty())
+  {
+    auto visit = [&](const auto & positions) {
+      using Scalar = typename std::remove_reference_t<decltype(positions)>::value_type;
+      CoordinateType coordType = CoordinateType::Float32;
+      if constexpr (std::is_same_v<Scalar, Eigen::half>)
+      {
+        coordType = CoordinateType::Float16;
+      }
+      else if constexpr (std::is_same_v<Scalar, double>)
+      {
+        coordType = CoordinateType::Float64;
+      }
+      for (SizeValueType i = 0; i < static_cast<SizeValueType>(m_Offsets.size()); ++i)
+      {
+        const SizeValueType start = static_cast<SizeValueType>(m_Offsets[i]);
+        const SizeValueType end = (i + 1 < static_cast<SizeValueType>(m_Offsets.size()))
+                                    ? static_cast<SizeValueType>(m_Offsets[i + 1])
+                                    : m_NumberOfVertices;
+        if (end <= start)
+        {
+          fn(i, nullptr, 0, coordType, requestedSystem);
+          continue;
+        }
+        const SizeValueType count = static_cast<SizeValueType>(end - start);
+        const void * ptr = static_cast<const void *>(positions.data() + start * 3);
+        if (requestedSystem == m_CoordinateSystem)
+        {
+          fn(i, ptr, count, coordType, m_CoordinateSystem);
+          continue;
+        }
+        const size_t total = static_cast<size_t>(count) * 3;
+        std::vector<Scalar> temp(total);
+        for (size_t v = 0; v < total; v += 3)
+        {
+          temp[v] = static_cast<Scalar>(-static_cast<double>(positions[start * 3 + v]));
+          temp[v + 1] = static_cast<Scalar>(-static_cast<double>(positions[start * 3 + v + 1]));
+          temp[v + 2] = static_cast<Scalar>(positions[start * 3 + v + 2]);
+        }
+        fn(i, temp.data(), count, coordType, requestedSystem);
+      }
+    };
+    std::visit(visit, m_Positions);
+    return;
+  }
+
+  if (!m_TrxHandle)
+  {
+    return;
+  }
+
+  m_TrxHandle->ForEachStreamlineRaw(
+    [&](SizeValueType index, const void * raw, SizeValueType count, CoordinateType coordType) {
+      if (requestedSystem == CoordinateSystem::RAS)
+      {
+        fn(index, raw, count, coordType, CoordinateSystem::RAS);
+        return;
+      }
+      if (raw == nullptr || count == 0)
+      {
+        fn(index, raw, count, coordType, CoordinateSystem::LPS);
+        return;
+      }
+
+      const size_t total = static_cast<size_t>(count) * 3;
+      if (coordType == CoordinateType::Float16)
+      {
+        const auto * src = static_cast<const Eigen::half *>(raw);
+        std::vector<Eigen::half> temp(total);
+        for (size_t i = 0; i < total; i += 3)
+        {
+          temp[i] = static_cast<Eigen::half>(-static_cast<float>(src[i]));
+          temp[i + 1] = static_cast<Eigen::half>(-static_cast<float>(src[i + 1]));
+          temp[i + 2] = src[i + 2];
+        }
+        fn(index, temp.data(), count, coordType, CoordinateSystem::LPS);
+      }
+      else if (coordType == CoordinateType::Float64)
+      {
+        const auto * src = static_cast<const double *>(raw);
+        std::vector<double> temp(total);
+        for (size_t i = 0; i < total; i += 3)
+        {
+          temp[i] = -src[i];
+          temp[i + 1] = -src[i + 1];
+          temp[i + 2] = src[i + 2];
+        }
+        fn(index, temp.data(), count, coordType, CoordinateSystem::LPS);
+      }
+      else
+      {
+        const auto * src = static_cast<const float *>(raw);
+        std::vector<float> temp(total);
+        for (size_t i = 0; i < total; i += 3)
+        {
+          temp[i] = -src[i];
+          temp[i + 1] = -src[i + 1];
+          temp[i + 2] = src[i + 2];
+        }
+        fn(index, temp.data(), count, coordType, CoordinateSystem::LPS);
+      }
+    });
+}
+
 void
 TrxStreamlineData::SetTrxHandle(const std::shared_ptr<TrxHandleBase> & trxHandle)
 {
@@ -342,6 +577,7 @@ TrxStreamlineData::SetTrxHandle(const std::shared_ptr<TrxHandleBase> & trxHandle
 
   m_NumberOfVertices = static_cast<SizeValueType>(trxHandle->NumVertices());
   m_CoordinateSystem = CoordinateSystem::LPS;
+  m_AabbCacheValid = false;
 
   TrxStreamlineData::MatrixType ras;
   if (trxHandle->GetVoxelToRas(ras))
@@ -383,6 +619,7 @@ TrxStreamlineData::SetPositions(std::vector<Eigen::half> && positions)
   m_PositionsLoaded = true;
   m_TrxHandle.reset();
   m_CoordinateSystem = CoordinateSystem::LPS;
+  m_AabbCacheValid = false;
   UpdateVertexCount();
   this->Modified();
 }
@@ -396,6 +633,7 @@ TrxStreamlineData::SetPositions(std::vector<float> && positions)
   m_PositionsLoaded = true;
   m_TrxHandle.reset();
   m_CoordinateSystem = CoordinateSystem::LPS;
+  m_AabbCacheValid = false;
   UpdateVertexCount();
   this->Modified();
 }
@@ -409,6 +647,7 @@ TrxStreamlineData::SetPositions(std::vector<double> && positions)
   m_PositionsLoaded = true;
   m_TrxHandle.reset();
   m_CoordinateSystem = CoordinateSystem::LPS;
+  m_AabbCacheValid = false;
   UpdateVertexCount();
   this->Modified();
 }
@@ -489,6 +728,7 @@ void
 TrxStreamlineData::SetOffsets(std::vector<OffsetType> && offsets)
 {
   m_Offsets = std::move(offsets);
+  m_AabbCacheValid = false;
   this->Modified();
 }
 
@@ -747,18 +987,49 @@ TrxStreamlineData::SubsetStreamlines(const std::vector<uint32_t> & streamlineIds
 }
 
 TrxStreamlineData::Pointer
+TrxStreamlineData::SubsetStreamlinesLazy(const std::vector<uint32_t> & streamlineIds, bool buildCacheForResult) const
+{
+  if (m_TrxHandle)
+  {
+    auto handle = m_TrxHandle->SubsetStreamlines(streamlineIds, buildCacheForResult);
+    auto output = TrxStreamlineData::New();
+    output->SetTrxHandle(handle);
+    return output;
+  }
+  return SubsetStreamlines(streamlineIds, buildCacheForResult);
+}
+
+TrxStreamlineData::Pointer
 TrxStreamlineData::QueryAabb(const PointType & minCornerLps,
                              const PointType & maxCornerLps,
                              bool buildCacheForResult) const
 {
-  const PointType rasMinInput{ -minCornerLps[0], -minCornerLps[1], minCornerLps[2] };
-  const PointType rasMaxInput{ -maxCornerLps[0], -maxCornerLps[1], maxCornerLps[2] };
-  const PointType rasMin{ std::min(rasMinInput[0], rasMaxInput[0]),
-                          std::min(rasMinInput[1], rasMaxInput[1]),
-                          std::min(rasMinInput[2], rasMaxInput[2]) };
-  const PointType rasMax{ std::max(rasMinInput[0], rasMaxInput[0]),
-                          std::max(rasMinInput[1], rasMaxInput[1]),
-                          std::max(rasMinInput[2], rasMaxInput[2]) };
+  return QueryAabb(minCornerLps, maxCornerLps, buildCacheForResult, 0, 42);
+}
+
+TrxStreamlineData::Pointer
+TrxStreamlineData::QueryAabb(const PointType & minCornerLps,
+                             const PointType & maxCornerLps,
+                             bool              buildCacheForResult,
+                             size_t            maxStreamlines,
+                             uint32_t          rngSeed) const
+{
+  PointType rasMinInput;
+  rasMinInput[0] = -minCornerLps[0];
+  rasMinInput[1] = -minCornerLps[1];
+  rasMinInput[2] = minCornerLps[2];
+  PointType rasMaxInput;
+  rasMaxInput[0] = -maxCornerLps[0];
+  rasMaxInput[1] = -maxCornerLps[1];
+  rasMaxInput[2] = maxCornerLps[2];
+  PointType rasMin;
+  rasMin[0] = std::min(rasMinInput[0], rasMaxInput[0]);
+  rasMin[1] = std::min(rasMinInput[1], rasMaxInput[1]);
+  rasMin[2] = std::min(rasMinInput[2], rasMaxInput[2]);
+  PointType rasMax;
+  rasMax[0] = std::max(rasMinInput[0], rasMaxInput[0]);
+  rasMax[1] = std::max(rasMinInput[1], rasMaxInput[1]);
+  rasMax[2] = std::max(rasMinInput[2], rasMaxInput[2]);
 
   if (m_TrxHandle)
   {
@@ -768,8 +1039,10 @@ TrxStreamlineData::QueryAabb(const PointType & minCornerLps,
     std::array<float, 3> maxCorner{ static_cast<float>(rasMax[0]),
                                     static_cast<float>(rasMax[1]),
                                     static_cast<float>(rasMax[2]) };
-    auto                 handle = m_TrxHandle->QueryAabb(minCorner, maxCorner, buildCacheForResult);
-    auto                 output = TrxStreamlineData::New();
+    auto handle = (maxStreamlines > 0)
+                    ? m_TrxHandle->QueryAabb(minCorner, maxCorner, buildCacheForResult, maxStreamlines, rngSeed)
+                    : m_TrxHandle->QueryAabb(minCorner, maxCorner, buildCacheForResult);
+    auto output = TrxStreamlineData::New();
     output->SetTrxHandle(handle);
     return output;
   }
@@ -831,7 +1104,102 @@ TrxStreamlineData::QueryAabb(const PointType & minCornerLps,
     itkExceptionMacro("No positions available for AABB query.");
   }
 
+  if (maxStreamlines > 0 && selected.size() > maxStreamlines)
+  {
+    std::mt19937 rng(rngSeed);
+    std::shuffle(selected.begin(), selected.end(), rng);
+    selected.resize(maxStreamlines);
+    std::sort(selected.begin(), selected.end());
+  }
+
   return SubsetStreamlines(selected);
+}
+
+const std::vector<TrxStreamlineData::AabbType> &
+TrxStreamlineData::GetOrBuildStreamlineAabbs() const
+{
+  if (m_AabbCacheValid)
+  {
+    return m_AabbCache;
+  }
+
+  m_AabbCache.clear();
+
+  if (m_TrxHandle)
+  {
+    const auto & rasAabbs = m_TrxHandle->GetOrBuildStreamlineAabbs();
+    m_AabbCache.reserve(rasAabbs.size());
+    for (const auto & ras : rasAabbs)
+    {
+      const double minX = static_cast<double>(ras[0]);
+      const double minY = static_cast<double>(ras[1]);
+      const double minZ = static_cast<double>(ras[2]);
+      const double maxX = static_cast<double>(ras[3]);
+      const double maxY = static_cast<double>(ras[4]);
+      const double maxZ = static_cast<double>(ras[5]);
+      const double lpsMinX = std::min(-maxX, -minX);
+      const double lpsMaxX = std::max(-maxX, -minX);
+      const double lpsMinY = std::min(-maxY, -minY);
+      const double lpsMaxY = std::max(-maxY, -minY);
+      m_AabbCache.push_back({ lpsMinX, lpsMinY, minZ, lpsMaxX, lpsMaxY, maxZ });
+    }
+    m_AabbCacheValid = true;
+    return m_AabbCache;
+  }
+
+  if (!m_PositionsLoaded || m_Offsets.empty())
+  {
+    itkExceptionMacro("No positions available to build AABB cache.");
+  }
+
+  m_AabbCache.reserve(m_Offsets.size());
+  auto buildFromLps = [&](const auto & positions) {
+    for (size_t i = 0; i < m_Offsets.size(); ++i)
+    {
+      const uint64_t start = m_Offsets[i];
+      const uint64_t end = (i + 1 < m_Offsets.size()) ? m_Offsets[i + 1]
+                                                      : static_cast<uint64_t>(m_NumberOfVertices);
+      if (end <= start)
+      {
+        m_AabbCache.push_back({ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 });
+        continue;
+      }
+      double minX = std::numeric_limits<double>::infinity();
+      double minY = std::numeric_limits<double>::infinity();
+      double minZ = std::numeric_limits<double>::infinity();
+      double maxX = -std::numeric_limits<double>::infinity();
+      double maxY = -std::numeric_limits<double>::infinity();
+      double maxZ = -std::numeric_limits<double>::infinity();
+      for (uint64_t p = start; p < end; ++p)
+      {
+        const size_t base = static_cast<size_t>(p) * 3;
+        const double x = static_cast<double>(positions[base]);
+        const double y = static_cast<double>(positions[base + 1]);
+        const double z = static_cast<double>(positions[base + 2]);
+        minX = std::min(minX, x);
+        minY = std::min(minY, y);
+        minZ = std::min(minZ, z);
+        maxX = std::max(maxX, x);
+        maxY = std::max(maxY, y);
+        maxZ = std::max(maxZ, z);
+      }
+      m_AabbCache.push_back({ minX, minY, minZ, maxX, maxY, maxZ });
+    }
+  };
+  std::visit(buildFromLps, m_Positions);
+  m_AabbCacheValid = true;
+  return m_AabbCache;
+}
+
+void
+TrxStreamlineData::InvalidateAabbCache() const
+{
+  m_AabbCacheValid = false;
+  m_AabbCache.clear();
+  if (m_TrxHandle)
+  {
+    m_TrxHandle->InvalidateAabbCache();
+  }
 }
 
 void
@@ -856,6 +1224,33 @@ TrxStreamlineData::PrintSelf(std::ostream & os, Indent indent) const
   os << indent << "NumberOfVertices: " << m_NumberOfVertices << '\n';
   os << indent << "NumberOfStreamlines: " << m_Offsets.size() << '\n';
   os << indent << "CoordinateType: " << static_cast<int>(GetCoordinateType()) << '\n';
+}
+
+void
+TrxStreamlineData::Graft(const DataObject * data)
+{
+  Superclass::Graft(data);
+
+  const auto * trxData = dynamic_cast<const TrxStreamlineData *>(data);
+  if (!trxData)
+  {
+    return;
+  }
+
+  m_Positions = trxData->m_Positions;
+  m_Offsets = trxData->m_Offsets;
+  m_NumberOfVertices = trxData->m_NumberOfVertices;
+  m_FileCoordinateType = trxData->m_FileCoordinateType;
+  m_TrxHandle = trxData->m_TrxHandle;
+  m_PositionsLoaded = trxData->m_PositionsLoaded;
+
+  m_VoxelToRasMatrix = trxData->m_VoxelToRasMatrix;
+  m_VoxelToLpsMatrix = trxData->m_VoxelToLpsMatrix;
+  m_Dimensions = trxData->m_Dimensions;
+  m_HasVoxelToRas = trxData->m_HasVoxelToRas;
+  m_HasVoxelToLps = trxData->m_HasVoxelToLps;
+  m_HasDimensions = trxData->m_HasDimensions;
+  m_CoordinateSystem = trxData->m_CoordinateSystem;
 }
 
 void
