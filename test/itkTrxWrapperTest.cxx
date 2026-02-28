@@ -95,27 +95,63 @@ ComputeAabbIntersectionCount(const itk::TrxStreamlineData *           data,
     return 0;
   }
 
-  const auto & aabbs = data->GetOrBuildStreamlineAabbs();
-  if (aabbs.empty())
-  {
-    return 0;
-  }
+  itk::TrxStreamlineData::PointType rasMinInput;
+  rasMinInput[0] = -minCorner[0];
+  rasMinInput[1] = -minCorner[1];
+  rasMinInput[2] = minCorner[2];
+  itk::TrxStreamlineData::PointType rasMaxInput;
+  rasMaxInput[0] = -maxCorner[0];
+  rasMaxInput[1] = -maxCorner[1];
+  rasMaxInput[2] = maxCorner[2];
 
-  itk::TrxStreamlineData::PointType lpsMin;
-  lpsMin[0] = std::min(minCorner[0], maxCorner[0]);
-  lpsMin[1] = std::min(minCorner[1], maxCorner[1]);
-  lpsMin[2] = std::min(minCorner[2], maxCorner[2]);
-  itk::TrxStreamlineData::PointType lpsMax;
-  lpsMax[0] = std::max(minCorner[0], maxCorner[0]);
-  lpsMax[1] = std::max(minCorner[1], maxCorner[1]);
-  lpsMax[2] = std::max(minCorner[2], maxCorner[2]);
+  itk::TrxStreamlineData::PointType rasMin;
+  rasMin[0] = std::min(rasMinInput[0], rasMaxInput[0]);
+  rasMin[1] = std::min(rasMinInput[1], rasMaxInput[1]);
+  rasMin[2] = std::min(rasMinInput[2], rasMaxInput[2]);
+  itk::TrxStreamlineData::PointType rasMax;
+  rasMax[0] = std::max(rasMinInput[0], rasMaxInput[0]);
+  rasMax[1] = std::max(rasMinInput[1], rasMaxInput[1]);
+  rasMax[2] = std::max(rasMinInput[2], rasMaxInput[2]);
 
+  constexpr double tol = 1e-6;
   size_t expectedCount = 0;
-  for (const auto & aabb : aabbs)
+  const auto totalStreamlines = data->GetNumberOfStreamlines();
+  for (size_t i = 0; i < totalStreamlines; ++i)
   {
-    if (aabb[0] <= lpsMax[0] && aabb[3] >= lpsMin[0] &&
-        aabb[1] <= lpsMax[1] && aabb[4] >= lpsMin[1] &&
-        aabb[2] <= lpsMax[2] && aabb[5] >= lpsMin[2])
+    const auto range = data->GetStreamlineRange(static_cast<itk::TrxStreamlineData::SizeValueType>(i));
+    bool       hasPoint = false;
+    float      minX = 0.0f;
+    float      minY = 0.0f;
+    float      minZ = 0.0f;
+    float      maxX = 0.0f;
+    float      maxY = 0.0f;
+    float      maxZ = 0.0f;
+    for (const auto & pointLps : range)
+    {
+      const float x = static_cast<float>(-pointLps[0]);
+      const float y = static_cast<float>(-pointLps[1]);
+      const float z = static_cast<float>(pointLps[2]);
+      if (!hasPoint)
+      {
+        minX = maxX = x;
+        minY = maxY = y;
+        minZ = maxZ = z;
+        hasPoint = true;
+      }
+      else
+      {
+        minX = std::min(minX, x);
+        minY = std::min(minY, y);
+        minZ = std::min(minZ, z);
+        maxX = std::max(maxX, x);
+        maxY = std::max(maxY, y);
+        maxZ = std::max(maxZ, z);
+      }
+    }
+    if (hasPoint &&
+        minX <= static_cast<float>(rasMax[0] + tol) && maxX >= static_cast<float>(rasMin[0] - tol) &&
+        minY <= static_cast<float>(rasMax[1] + tol) && maxY >= static_cast<float>(rasMin[1] - tol) &&
+        minZ <= static_cast<float>(rasMax[2] + tol) && maxZ >= static_cast<float>(rasMin[2] - tol))
     {
       ++expectedCount;
     }
