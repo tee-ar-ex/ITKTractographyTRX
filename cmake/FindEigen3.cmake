@@ -13,6 +13,7 @@ if(NOT EIGEN3_INCLUDE_DIR)
       "${Eigen3_DIR}"
       "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen"
       "${ITK_BINARY_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen"
+      "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen"
     PATH_SUFFIXES eigen3
   )
 endif()
