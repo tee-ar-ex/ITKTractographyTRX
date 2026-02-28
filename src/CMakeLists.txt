@@ -11,3 +11,6 @@ set(
 
 itk_module_add_library(TractographyTRX ${TractographyTRX_SRCS})
 target_link_libraries(TractographyTRX PUBLIC trx-cpp::trx)
+if(TARGET trx)
+  add_dependencies(TractographyTRX trx)
+endif()
