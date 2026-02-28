@@ -26,10 +26,13 @@ if(NOT trx-cpp_FOUND)
       set(_itk_zlib_include "${ITK_DIR}/Modules/ThirdParty/ZLIB/src")
       if(EXISTS "${_itk_zlib_include}/zlib.h")
         set(ZLIB_INCLUDE_DIR "${_itk_zlib_include}" CACHE PATH "ZLIB include dir" FORCE)
+      elseif(EXISTS "${_itk_zlib_include}/itkzlib-ng/zlib.h")
+        set(ZLIB_INCLUDE_DIR "${_itk_zlib_include}/itkzlib-ng" CACHE PATH "ZLIB include dir" FORCE)
       endif()
       file(GLOB _itk_zlib_libs
         "${ITK_DIR}/lib/*zlib*"
         "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/*zlib*"
+        "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/itkzlib-ng/*zlib*"
         "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/Release/*zlib*"
         "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/Debug/*zlib*"
       )
@@ -44,7 +47,24 @@ if(NOT trx-cpp_FOUND)
       find_package(ZLIB QUIET)
     endif()
     if(NOT ZLIB_FOUND)
-      message(FATAL_ERROR "ZLIB not found. Provide ZLIB_LIBRARY/ZLIB_INCLUDE_DIR or ensure ITK provides zlib.")
+      message(STATUS "ZLIB not found via ITK; fetching v1.3.1")
+      if(NOT DEFINED SKIP_INSTALL_ALL)
+        set(SKIP_INSTALL_ALL ON CACHE BOOL "Disable zlib install")
+      endif()
+      FetchContent_Declare(
+        zlib
+        GIT_REPOSITORY https://github.com/madler/zlib.git
+        GIT_TAG v1.3.1
+      )
+      FetchContent_MakeAvailable(zlib)
+      if(TARGET zlibstatic)
+        set(ZLIB_LIBRARY zlibstatic CACHE STRING "ZLIB library target" FORCE)
+      elseif(TARGET zlib)
+        set(ZLIB_LIBRARY zlib CACHE STRING "ZLIB library target" FORCE)
+      endif()
+      if(zlib_SOURCE_DIR)
+        set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" CACHE PATH "ZLIB include dir" FORCE)
+      endif()
     endif()
     find_package(libzip QUIET)
     if(NOT libzip_FOUND)
