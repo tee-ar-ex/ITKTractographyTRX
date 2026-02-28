@@ -28,6 +28,8 @@
 
 #include "vnl/vnl_matrix.h"
 
+#include <trx/trx.h>
+
 #include <map>
 #include <memory>
 #include <string>
