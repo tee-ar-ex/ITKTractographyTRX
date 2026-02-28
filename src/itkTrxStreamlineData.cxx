@@ -1050,6 +1050,10 @@ TrxStreamlineData::QueryAabb(const PointType & minCornerLps,
 
     std::vector<uint32_t> selected;
     selected.reserve(aabbs.size());
+    if (m_Offsets.empty())
+    {
+      return TrxStreamlineData::New();
+    }
     const size_t count = std::min(aabbs.size(), m_Offsets.size());
     for (size_t i = 0; i < count; ++i)
     {
