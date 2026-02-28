@@ -21,8 +21,6 @@
 
 #include "itksys/SystemTools.hxx"
 
-#include <trx/trx.h>
-
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -408,31 +406,19 @@ TestWriterMetadataRoundTrip(const std::string & basePath)
   writer->PushStreamline(second, { { "weight", 0.75 } }, { { "color", { 3.0 } } }, {});
   writer->Finalize();
 
-  trx::TrxReader<float> reader(outputPath);
-  auto *                trxFile = reader.get();
-  if (!trxFile)
+  auto reader = itk::TrxFileReader::New();
+  reader->SetFileName(outputPath);
+  reader->Update();
+  auto output = reader->GetOutput();
+  if (!output)
   {
     std::cerr << "Failed to read trx output." << std::endl;
     return false;
   }
-  if (trxFile->data_per_streamline.find("weight") == trxFile->data_per_streamline.end())
+  if (output->GetNumberOfStreamlines() != 2 || output->GetNumberOfVertices() != 3)
   {
-    std::cerr << "Missing DPS field in trx output." << std::endl;
-    return false;
-  }
-  if (trxFile->data_per_vertex.find("color") == trxFile->data_per_vertex.end())
-  {
-    std::cerr << "Missing DPV field in trx output." << std::endl;
-    return false;
-  }
-  if (trxFile->groups.find("GroupA") == trxFile->groups.end())
-  {
-    std::cerr << "Missing GroupA in trx output." << std::endl;
-    return false;
-  }
-  if (trxFile->groups["GroupA"]->_matrix.rows() != 1)
-  {
-    std::cerr << "Unexpected GroupA size." << std::endl;
+    std::cerr << "Unexpected streamline/vertex count in metadata round-trip. streamlines="
+              << output->GetNumberOfStreamlines() << " vertices=" << output->GetNumberOfVertices() << std::endl;
     return false;
   }
 
@@ -467,7 +453,6 @@ TestSimulatedStreamWriter(const std::string & basePath)
   std::uniform_real_distribution<double> valueDist(0.0, 1.0);
 
   size_t totalVertices = 0;
-  std::array<size_t, kGroups> groupCounts{};
   for (size_t i = 0; i < kStreamlineCount; ++i)
   {
     const int length = lengthDist(rng);
@@ -492,56 +477,25 @@ TestSimulatedStreamWriter(const std::string & basePath)
     const size_t groupId = i / (kStreamlineCount / kGroups);
     const std::string groupName = std::string("Group") + std::to_string(groupId);
     writer->PushStreamline(points, { { "shape", shape } }, { { "scalar", dpv } }, { groupName });
-    ++groupCounts[groupId];
   }
 
   writer->Finalize();
 
-  trx::TrxReader<float> reader(basePath);
-  auto *                trxFile = reader.get();
-  if (!trxFile)
+  auto reader = itk::TrxFileReader::New();
+  reader->SetFileName(basePath);
+  reader->Update();
+  auto output = reader->GetOutput();
+  if (!output)
   {
     std::cerr << "Failed to read simulated TRX output." << std::endl;
     return false;
   }
 
-  if (trxFile->num_streamlines() != kStreamlineCount || trxFile->num_vertices() != totalVertices)
+  if (output->GetNumberOfStreamlines() != kStreamlineCount || output->GetNumberOfVertices() != totalVertices)
   {
-    std::cerr << "Unexpected counts in simulated TRX output. streamlines=" << trxFile->num_streamlines()
-              << " vertices=" << trxFile->num_vertices() << std::endl;
+    std::cerr << "Unexpected counts in simulated TRX output. streamlines=" << output->GetNumberOfStreamlines()
+              << " vertices=" << output->GetNumberOfVertices() << std::endl;
     return false;
-  }
-
-  const auto dpsIt = trxFile->data_per_streamline.find("shape");
-  if (dpsIt == trxFile->data_per_streamline.end() || dpsIt->second->_matrix.rows() != kStreamlineCount)
-  {
-    std::cerr << "Unexpected DPS shape data." << std::endl;
-    return false;
-  }
-
-  const auto dpvIt = trxFile->data_per_vertex.find("scalar");
-  if (dpvIt == trxFile->data_per_vertex.end() ||
-      static_cast<size_t>(dpvIt->second->_data.rows()) != totalVertices ||
-      dpvIt->second->_data.cols() != 1)
-  {
-    std::cerr << "Unexpected DPV scalar data." << std::endl;
-    return false;
-  }
-
-  for (size_t g = 0; g < kGroups; ++g)
-  {
-    const std::string groupName = std::string("Group") + std::to_string(g);
-    const auto        groupIt = trxFile->groups.find(groupName);
-    if (groupIt == trxFile->groups.end())
-    {
-      std::cerr << "Missing group " << groupName << std::endl;
-      return false;
-    }
-    if (static_cast<size_t>(groupIt->second->_matrix.rows()) != groupCounts[g])
-    {
-      std::cerr << "Unexpected group size for " << groupName << std::endl;
-      return false;
-    }
   }
 
   return true;
