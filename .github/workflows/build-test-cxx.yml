@@ -15,5 +15,4 @@ jobs:
         -DITKGroup_Core:BOOL=ON
         -DITKGroup_Transform:BOOL=ON
         -DModule_ITKEigen3:BOOL=ON
-      cmake-options: >-
-        -DTRX_FETCH_LIBZIP:BOOL=ON
+      cmake-options: ""

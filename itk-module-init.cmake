@@ -8,15 +8,9 @@ set(TRX_CPP_GIT_TAG "main" CACHE STRING "trx-cpp git tag")
 find_package(trx-cpp QUIET)
 if(NOT trx-cpp_FOUND)
   if(TractographyTRX_FETCH_TRX_CPP)
-    if(NOT DEFINED TRX_BUILD_TESTS)
-      set(TRX_BUILD_TESTS OFF CACHE BOOL "Build trx-cpp tests")
-    endif()
-    if(NOT DEFINED TRX_BUILD_EXAMPLES)
-      set(TRX_BUILD_EXAMPLES OFF CACHE BOOL "Build trx-cpp examples")
-    endif()
-    if(NOT DEFINED TRX_BUILD_BENCHMARKS)
-      set(TRX_BUILD_BENCHMARKS OFF CACHE BOOL "Build trx-cpp benchmarks")
-    endif()
+    set(TRX_BUILD_TESTS OFF)
+    set(TRX_BUILD_EXAMPLES OFF)
+    set(TRX_BUILD_BENCHMARKS OFF)
     if(CMAKE_VERSION VERSION_LESS 3.11)
       message(FATAL_ERROR "trx-cpp not found and CMake < 3.11 cannot fetch it. Set trx-cpp_DIR or update CMake.")
     endif()
@@ -48,15 +42,16 @@ if(NOT trx-cpp_FOUND)
     endif()
     if(NOT ZLIB_FOUND)
       message(STATUS "ZLIB not found via ITK; fetching v1.3.1")
-      if(NOT DEFINED SKIP_INSTALL_ALL)
-        set(SKIP_INSTALL_ALL ON CACHE BOOL "Disable zlib install")
-      endif()
+      set(SKIP_INSTALL_ALL ON)
+      set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+      set(BUILD_SHARED_LIBS OFF)
       FetchContent_Declare(
         zlib
         GIT_REPOSITORY https://github.com/madler/zlib.git
         GIT_TAG v1.3.1
       )
       FetchContent_MakeAvailable(zlib)
+      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
       if(TARGET zlibstatic)
         set(ZLIB_LIBRARY zlibstatic CACHE STRING "ZLIB library target" FORCE)
       elseif(TARGET zlib)
@@ -69,21 +64,11 @@ if(NOT trx-cpp_FOUND)
     find_package(libzip QUIET)
     if(NOT libzip_FOUND)
       message(STATUS "libzip not found; fetching v1.11.4")
-      if(NOT DEFINED LIBZIP_DO_INSTALL)
-        set(LIBZIP_DO_INSTALL ON CACHE BOOL "Enable libzip package config")
-      endif()
-      if(NOT DEFINED BUILD_TOOLS)
-        set(BUILD_TOOLS OFF CACHE BOOL "Disable libzip tools")
-      endif()
-      if(NOT DEFINED BUILD_REGRESS)
-        set(BUILD_REGRESS OFF CACHE BOOL "Disable libzip regression tests")
-      endif()
-      if(NOT DEFINED BUILD_EXAMPLES)
-        set(BUILD_EXAMPLES OFF CACHE BOOL "Disable libzip examples")
-      endif()
-      if(NOT DEFINED BUILD_DOC)
-        set(BUILD_DOC OFF CACHE BOOL "Disable libzip docs")
-      endif()
+      set(LIBZIP_DO_INSTALL OFF)
+      set(BUILD_TOOLS OFF)
+      set(BUILD_REGRESS OFF)
+      set(BUILD_EXAMPLES OFF)
+      set(BUILD_DOC OFF)
       FetchContent_Declare(
         libzip
         GIT_REPOSITORY https://github.com/nih-at/libzip.git
@@ -91,27 +76,11 @@ if(NOT trx-cpp_FOUND)
       )
       FetchContent_MakeAvailable(libzip)
     endif()
+    # Hint Eigen3 for trx-cpp's find_package(Eigen3) via our FindEigen3.cmake
     if(ITK_SOURCE_DIR AND EXISTS "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
       set(EIGEN3_INCLUDE_DIR "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
-      set(Eigen3_ROOT "${EIGEN3_INCLUDE_DIR}" CACHE PATH "Eigen3 root dir")
     elseif(ITK_DIR AND EXISTS "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
       set(EIGEN3_INCLUDE_DIR "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
-      set(Eigen3_ROOT "${EIGEN3_INCLUDE_DIR}" CACHE PATH "Eigen3 root dir")
-    elseif(ITK_DIR)
-      get_filename_component(_itk_build_parent "${ITK_DIR}" DIRECTORY)
-      set(_itk_source_candidate "${_itk_build_parent}/ITK")
-      if(EXISTS "${_itk_source_candidate}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
-        set(EIGEN3_INCLUDE_DIR "${_itk_source_candidate}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
-        set(Eigen3_ROOT "${EIGEN3_INCLUDE_DIR}" CACHE PATH "Eigen3 root dir")
-      endif()
-      unset(_itk_build_parent)
-      unset(_itk_source_candidate)
-    endif()
-    if(EIGEN3_INCLUDE_DIR AND NOT TARGET Eigen3::Eigen)
-      add_library(Eigen3::Eigen INTERFACE IMPORTED)
-      set_target_properties(Eigen3::Eigen PROPERTIES
-        INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIR}"
-      )
     endif()
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
@@ -119,24 +88,13 @@ if(NOT trx-cpp_FOUND)
       GIT_REPOSITORY https://github.com/tee-ar-ex/trx-cpp.git
       GIT_TAG ${TRX_CPP_GIT_TAG}
     )
+    set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF)
     FetchContent_MakeAvailable(trx_cpp)
+    set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
+    unset(_saved_BUILD_SHARED_LIBS)
     if(TARGET trx)
-      set(_trx_build_dir "${CMAKE_BINARY_DIR}/_deps/trx_cpp-build")
-      set_target_properties(trx PROPERTIES
-        ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${_trx_build_dir}/Debug"
-        ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${_trx_build_dir}/Release"
-        ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_trx_build_dir}/RelWithDebInfo"
-        ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL "${_trx_build_dir}/MinSizeRel"
-        LIBRARY_OUTPUT_DIRECTORY_DEBUG "${_trx_build_dir}/Debug"
-        LIBRARY_OUTPUT_DIRECTORY_RELEASE "${_trx_build_dir}/Release"
-        LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_trx_build_dir}/RelWithDebInfo"
-        LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "${_trx_build_dir}/MinSizeRel"
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${_trx_build_dir}/Debug"
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${_trx_build_dir}/Release"
-        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_trx_build_dir}/RelWithDebInfo"
-        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${_trx_build_dir}/MinSizeRel"
-      )
-      unset(_trx_build_dir)
+      set_target_properties(trx PROPERTIES POSITION_INDEPENDENT_CODE ON)
     endif()
   else()
     find_package(trx-cpp REQUIRED)

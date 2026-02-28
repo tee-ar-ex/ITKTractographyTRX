@@ -5,7 +5,6 @@ add_executable(bench_trx_itk_realdata
 target_link_libraries(bench_trx_itk_realdata
   PRIVATE
     TractographyTRX
-    trx-cpp::trx
     benchmark::benchmark
 )
 
