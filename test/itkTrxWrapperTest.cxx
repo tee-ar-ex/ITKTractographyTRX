@@ -95,62 +95,27 @@ ComputeAabbIntersectionCount(const itk::TrxStreamlineData *           data,
     return 0;
   }
 
-  itk::TrxStreamlineData::PointType rasMinInput;
-  rasMinInput[0] = -minCorner[0];
-  rasMinInput[1] = -minCorner[1];
-  rasMinInput[2] = minCorner[2];
-  itk::TrxStreamlineData::PointType rasMaxInput;
-  rasMaxInput[0] = -maxCorner[0];
-  rasMaxInput[1] = -maxCorner[1];
-  rasMaxInput[2] = maxCorner[2];
+  const auto & aabbs = data->GetOrBuildStreamlineAabbs();
+  if (aabbs.empty())
+  {
+    return 0;
+  }
 
-  itk::TrxStreamlineData::PointType rasMin;
-  rasMin[0] = std::min(rasMinInput[0], rasMaxInput[0]);
-  rasMin[1] = std::min(rasMinInput[1], rasMaxInput[1]);
-  rasMin[2] = std::min(rasMinInput[2], rasMaxInput[2]);
-  itk::TrxStreamlineData::PointType rasMax;
-  rasMax[0] = std::max(rasMinInput[0], rasMaxInput[0]);
-  rasMax[1] = std::max(rasMinInput[1], rasMaxInput[1]);
-  rasMax[2] = std::max(rasMinInput[2], rasMaxInput[2]);
+  itk::TrxStreamlineData::PointType lpsMin;
+  lpsMin[0] = std::min(minCorner[0], maxCorner[0]);
+  lpsMin[1] = std::min(minCorner[1], maxCorner[1]);
+  lpsMin[2] = std::min(minCorner[2], maxCorner[2]);
+  itk::TrxStreamlineData::PointType lpsMax;
+  lpsMax[0] = std::max(minCorner[0], maxCorner[0]);
+  lpsMax[1] = std::max(minCorner[1], maxCorner[1]);
+  lpsMax[2] = std::max(minCorner[2], maxCorner[2]);
 
   size_t expectedCount = 0;
-  const auto totalStreamlines = data->GetNumberOfStreamlines();
-  for (size_t i = 0; i < totalStreamlines; ++i)
+  for (const auto & aabb : aabbs)
   {
-    const auto range = data->GetStreamlineRange(static_cast<itk::TrxStreamlineData::SizeValueType>(i));
-    bool       hasPoint = false;
-    double     minX = 0.0;
-    double     minY = 0.0;
-    double     minZ = 0.0;
-    double     maxX = 0.0;
-    double     maxY = 0.0;
-    double     maxZ = 0.0;
-    for (const auto & pointLps : range)
-    {
-      const double x = -pointLps[0];
-      const double y = -pointLps[1];
-      const double z = pointLps[2];
-      if (!hasPoint)
-      {
-        minX = maxX = x;
-        minY = maxY = y;
-        minZ = maxZ = z;
-        hasPoint = true;
-      }
-      else
-      {
-        minX = std::min(minX, x);
-        minY = std::min(minY, y);
-        minZ = std::min(minZ, z);
-        maxX = std::max(maxX, x);
-        maxY = std::max(maxY, y);
-        maxZ = std::max(maxZ, z);
-      }
-    }
-    if (hasPoint &&
-        minX <= rasMax[0] && maxX >= rasMin[0] &&
-        minY <= rasMax[1] && maxY >= rasMin[1] &&
-        minZ <= rasMax[2] && maxZ >= rasMin[2])
+    if (aabb[0] <= lpsMax[0] && aabb[3] >= lpsMin[0] &&
+        aabb[1] <= lpsMax[1] && aabb[4] >= lpsMin[1] &&
+        aabb[2] <= lpsMax[2] && aabb[5] >= lpsMin[2])
     {
       ++expectedCount;
     }
