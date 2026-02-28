@@ -1033,18 +1033,43 @@ TrxStreamlineData::QueryAabb(const PointType & minCornerLps,
 
   if (m_TrxHandle)
   {
-    std::array<float, 3> minCorner{ static_cast<float>(rasMin[0]),
-                                    static_cast<float>(rasMin[1]),
-                                    static_cast<float>(rasMin[2]) };
-    std::array<float, 3> maxCorner{ static_cast<float>(rasMax[0]),
-                                    static_cast<float>(rasMax[1]),
-                                    static_cast<float>(rasMax[2]) };
-    auto handle = (maxStreamlines > 0)
-                    ? m_TrxHandle->QueryAabb(minCorner, maxCorner, buildCacheForResult, maxStreamlines, rngSeed)
-                    : m_TrxHandle->QueryAabb(minCorner, maxCorner, buildCacheForResult);
-    auto output = TrxStreamlineData::New();
-    output->SetTrxHandle(handle);
-    return output;
+    const auto & aabbs = GetOrBuildStreamlineAabbs();
+    if (aabbs.empty())
+    {
+      return TrxStreamlineData::New();
+    }
+
+    PointType lpsMin;
+    lpsMin[0] = std::min(minCornerLps[0], maxCornerLps[0]);
+    lpsMin[1] = std::min(minCornerLps[1], maxCornerLps[1]);
+    lpsMin[2] = std::min(minCornerLps[2], maxCornerLps[2]);
+    PointType lpsMax;
+    lpsMax[0] = std::max(minCornerLps[0], maxCornerLps[0]);
+    lpsMax[1] = std::max(minCornerLps[1], maxCornerLps[1]);
+    lpsMax[2] = std::max(minCornerLps[2], maxCornerLps[2]);
+
+    std::vector<uint32_t> selected;
+    selected.reserve(aabbs.size());
+    for (size_t i = 0; i < aabbs.size(); ++i)
+    {
+      const auto & aabb = aabbs[i];
+      if (aabb[0] <= lpsMax[0] && aabb[3] >= lpsMin[0] &&
+          aabb[1] <= lpsMax[1] && aabb[4] >= lpsMin[1] &&
+          aabb[2] <= lpsMax[2] && aabb[5] >= lpsMin[2])
+      {
+        selected.push_back(static_cast<uint32_t>(i));
+      }
+    }
+
+    if (maxStreamlines > 0 && selected.size() > maxStreamlines)
+    {
+      std::mt19937 rng(rngSeed);
+      std::shuffle(selected.begin(), selected.end(), rng);
+      selected.resize(maxStreamlines);
+      std::sort(selected.begin(), selected.end());
+    }
+
+    return SubsetStreamlinesLazy(selected, buildCacheForResult);
   }
 
   if (m_Offsets.empty())
