@@ -93,10 +93,10 @@ public:
     CoordinateSystem    coordinateSystem{ CoordinateSystem::LPS };
   };
 
-  class StreamlinePointRange
+  class TractographyTRX_EXPORT StreamlinePointRange
   {
   public:
-    class Iterator
+    class TractographyTRX_EXPORT Iterator
     {
     public:
       using iterator_category = std::forward_iterator_tag;
