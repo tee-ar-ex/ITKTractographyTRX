@@ -74,7 +74,13 @@ if(NOT trx-cpp_FOUND)
         GIT_REPOSITORY https://github.com/nih-at/libzip.git
         GIT_TAG v1.11.4
       )
+      set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+      set(BUILD_SHARED_LIBS OFF)
       FetchContent_MakeAvailable(libzip)
+      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
+      if(TARGET zip)
+        set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
+      endif()
     endif()
     # Hint Eigen3 for trx-cpp's find_package(Eigen3) via our FindEigen3.cmake
     if(ITK_SOURCE_DIR AND EXISTS "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
