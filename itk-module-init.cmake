@@ -81,7 +81,17 @@ if(NOT trx-cpp_FOUND)
       set(EIGEN3_INCLUDE_DIR "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
     elseif(ITK_DIR AND EXISTS "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
       set(EIGEN3_INCLUDE_DIR "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
+    elseif(ITK_DIR)
+      get_filename_component(_itk_build_parent "${ITK_DIR}" DIRECTORY)
+      set(_itk_source_candidate "${_itk_build_parent}/ITK")
+      if(EXISTS "${_itk_source_candidate}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
+        set(EIGEN3_INCLUDE_DIR "${_itk_source_candidate}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
+      endif()
+      unset(_itk_build_parent)
+      unset(_itk_source_candidate)
     endif()
+    # Create Eigen3::Eigen target before trx-cpp needs it
+    find_package(Eigen3 QUIET)
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
