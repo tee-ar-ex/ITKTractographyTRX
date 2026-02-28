@@ -24,6 +24,14 @@
 
 namespace itk
 {
+
+struct TrxStreamWriter::TrxStreamImpl : trx::TrxStream
+{
+  using trx::TrxStream::TrxStream;
+};
+
+TrxStreamWriter::~TrxStreamWriter() = default;
+
 namespace
 {
 itk::TrxStreamWriter::MatrixType
@@ -109,7 +117,7 @@ TrxStreamWriter::EnsureStream()
 {
   if (!m_Stream)
   {
-    m_Stream = std::make_unique<trx::TrxStream>("float32");
+    m_Stream = std::make_unique<TrxStreamImpl>("float32");
     if (m_PositionsBufferMaxBytes > 0)
     {
       m_Stream->set_positions_buffer_max_bytes(m_PositionsBufferMaxBytes);

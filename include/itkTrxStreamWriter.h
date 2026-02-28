@@ -28,17 +28,10 @@
 
 #include "vnl/vnl_matrix.h"
 
-#include <trx/trx.h>
-
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
-
-namespace trx
-{
-class TrxStream;
-}
 
 namespace itk
 {
@@ -120,7 +113,7 @@ public:
 
 protected:
   TrxStreamWriter();
-  ~TrxStreamWriter() override = default;
+  ~TrxStreamWriter() override;
 
 private:
   struct FieldSpec
@@ -156,7 +149,8 @@ private:
   MatrixType m_VoxelToLpsMatrix{};
   DimensionsType m_Dimensions{ { 0, 0, 0 } };
 
-  std::unique_ptr<trx::TrxStream> m_Stream;
+  struct TrxStreamImpl;
+  std::unique_ptr<TrxStreamImpl> m_Stream;
   size_t                          m_StreamlineCount{ 0 };
   size_t                          m_VertexCount{ 0 };
   bool                            m_Finalized{ false };
