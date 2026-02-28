@@ -1,3 +1,5 @@
+list(PREPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+
 option(TractographyTRX_FETCH_TRX_CPP "Fetch trx-cpp if not found" ON)
 set(TRX_CPP_GIT_TAG "main" CACHE STRING "trx-cpp git tag")
 
@@ -41,8 +43,9 @@ if(NOT trx-cpp_FOUND)
         GIT_TAG v1.11.4
       )
       FetchContent_MakeAvailable(libzip)
-      set(libzip_DIR "${libzip_BINARY_DIR}" CACHE PATH "libzip config path" FORCE)
-      list(PREPEND CMAKE_PREFIX_PATH "${libzip_BINARY_DIR}")
+    endif()
+    if(ITK_SOURCE_DIR AND EXISTS "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
+      set(EIGEN3_INCLUDE_DIR "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
     endif()
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
