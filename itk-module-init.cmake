@@ -123,21 +123,18 @@ if(NOT trx-cpp_FOUND)
     if(TARGET trx)
       set(_trx_build_dir "${CMAKE_BINARY_DIR}/_deps/trx_cpp-build")
       set_target_properties(trx PROPERTIES
-        ARCHIVE_OUTPUT_DIRECTORY "${_trx_build_dir}"
-        LIBRARY_OUTPUT_DIRECTORY "${_trx_build_dir}"
-        RUNTIME_OUTPUT_DIRECTORY "${_trx_build_dir}"
-        ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${_trx_build_dir}"
-        ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${_trx_build_dir}"
-        ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_trx_build_dir}"
-        ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL "${_trx_build_dir}"
-        LIBRARY_OUTPUT_DIRECTORY_DEBUG "${_trx_build_dir}"
-        LIBRARY_OUTPUT_DIRECTORY_RELEASE "${_trx_build_dir}"
-        LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_trx_build_dir}"
-        LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "${_trx_build_dir}"
-        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${_trx_build_dir}"
-        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${_trx_build_dir}"
-        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_trx_build_dir}"
-        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${_trx_build_dir}"
+        ARCHIVE_OUTPUT_DIRECTORY_DEBUG "${_trx_build_dir}/Debug"
+        ARCHIVE_OUTPUT_DIRECTORY_RELEASE "${_trx_build_dir}/Release"
+        ARCHIVE_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_trx_build_dir}/RelWithDebInfo"
+        ARCHIVE_OUTPUT_DIRECTORY_MINSIZEREL "${_trx_build_dir}/MinSizeRel"
+        LIBRARY_OUTPUT_DIRECTORY_DEBUG "${_trx_build_dir}/Debug"
+        LIBRARY_OUTPUT_DIRECTORY_RELEASE "${_trx_build_dir}/Release"
+        LIBRARY_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_trx_build_dir}/RelWithDebInfo"
+        LIBRARY_OUTPUT_DIRECTORY_MINSIZEREL "${_trx_build_dir}/MinSizeRel"
+        RUNTIME_OUTPUT_DIRECTORY_DEBUG "${_trx_build_dir}/Debug"
+        RUNTIME_OUTPUT_DIRECTORY_RELEASE "${_trx_build_dir}/Release"
+        RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${_trx_build_dir}/RelWithDebInfo"
+        RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL "${_trx_build_dir}/MinSizeRel"
       )
       unset(_trx_build_dir)
     endif()
