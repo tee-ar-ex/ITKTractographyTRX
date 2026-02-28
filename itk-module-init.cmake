@@ -49,6 +49,12 @@ if(NOT trx-cpp_FOUND)
     elseif(ITK_DIR AND EXISTS "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
       set(EIGEN3_INCLUDE_DIR "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
     endif()
+    if(EIGEN3_INCLUDE_DIR AND NOT TARGET Eigen3::Eigen)
+      add_library(Eigen3::Eigen INTERFACE IMPORTED)
+      set_target_properties(Eigen3::Eigen PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIR}"
+      )
+    endif()
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
