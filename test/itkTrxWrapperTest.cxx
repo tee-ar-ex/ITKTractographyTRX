@@ -741,8 +741,10 @@ TestAabbQueryWithTransforms(const std::string & basePath)
     }
     writer2->PushStreamline(points);
   }
+  std::cerr << "[XfTest] writer2->Finalize()" << std::endl;
   writer2->Finalize();
 
+  std::cerr << "[XfTest] reader2->Update()" << std::endl;
   auto reader2 = itk::TrxFileReader::New();
   reader2->SetFileName(transformedPath);
   reader2->Update();
@@ -753,13 +755,16 @@ TestAabbQueryWithTransforms(const std::string & basePath)
     return false;
   }
 
+  std::cerr << "[XfTest] ComputeAabbIntersectionCount on transformedData" << std::endl;
   const size_t expectedStreamed = ComputeAabbIntersectionCount(transformedData, minCorner, maxCorner);
+  std::cerr << "[XfTest] QueryAabb on transformedData" << std::endl;
   const auto   subsetStreamed = transformedData->QueryAabb(minCorner, maxCorner);
   if (!subsetStreamed || subsetStreamed->GetNumberOfStreamlines() != expectedStreamed)
   {
     std::cerr << "Unexpected AABB count after streamed transform." << std::endl;
     return false;
   }
+  std::cerr << "[XfTest] returning true" << std::endl;
 
   return true;
 }
