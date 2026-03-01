@@ -581,6 +581,19 @@ TestAabbQueryManyStreamlines(const std::string & basePath)
     std::cerr << "Failed to read AABB test output." << std::endl;
     return false;
   }
+  {
+    const auto & offsets = output->GetOffsets();
+    std::cerr << "[AabbMany] streamlines=" << output->GetNumberOfStreamlines()
+              << " vertices=" << output->GetNumberOfVertices()
+              << " offsets.size=" << offsets.size()
+              << " has_handle=" << output->HasTrxHandle();
+    if (!offsets.empty())
+    {
+      std::cerr << " offsets.front=" << offsets.front()
+                << " offsets.back=" << offsets.back();
+    }
+    std::cerr << std::endl;
+  }
 
   DataType::PointType minCorner;
   minCorner[0] = -0.9;
@@ -591,7 +604,9 @@ TestAabbQueryManyStreamlines(const std::string & basePath)
   maxCorner[1] = 1.1;
   maxCorner[2] = 0.55;
 
+  std::cerr << "[AabbMany] calling QueryAabb" << std::endl;
   auto subset = output->QueryAabb(minCorner, maxCorner);
+  std::cerr << "[AabbMany] QueryAabb returned" << std::endl;
   if (!subset)
   {
     std::cerr << "QueryAabb returned null output." << std::endl;
