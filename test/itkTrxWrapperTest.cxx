@@ -93,7 +93,26 @@ ComputeAabbIntersectionCount(const itk::TrxStreamlineData *           data,
     return 0;
   }
 
-  std::cerr << "[CAI] GetOrBuildStreamlineAabbs n=" << data->GetNumberOfStreamlines() << std::endl;
+  const auto nbStreamlines = data->GetNumberOfStreamlines();
+  const auto nbVertices = data->GetNumberOfVertices();
+  const auto & offsets = data->GetOffsets();
+  std::cerr << "[CAI] n_streamlines=" << nbStreamlines
+            << " n_vertices=" << nbVertices
+            << " offsets.size=" << offsets.size()
+            << " has_handle=" << data->HasTrxHandle();
+  if (!offsets.empty())
+  {
+    std::cerr << " offsets.front=" << offsets.front()
+              << " offsets.back=" << offsets.back();
+  }
+  std::cerr << std::endl;
+  if (!offsets.empty() && offsets.back() > static_cast<itk::TrxStreamlineData::OffsetType>(nbVertices))
+  {
+    std::cerr << "[CAI] offsets.back exceeds vertex count, aborting AABB query." << std::endl;
+    return 0;
+  }
+
+  std::cerr << "[CAI] GetOrBuildStreamlineAabbs" << std::endl;
   const auto & aabbs = data->GetOrBuildStreamlineAabbs();
   std::cerr << "[CAI] aabbs.size()=" << aabbs.size() << std::endl;
   if (aabbs.empty())
@@ -110,7 +129,6 @@ ComputeAabbIntersectionCount(const itk::TrxStreamlineData *           data,
   lpsMax[1] = std::max(minCorner[1], maxCorner[1]);
   lpsMax[2] = std::max(minCorner[2], maxCorner[2]);
 
-  const auto & offsets = data->GetOffsets();
   const size_t count = std::min(aabbs.size(), static_cast<size_t>(offsets.size()));
 
   size_t expectedCount = 0;
@@ -684,6 +702,19 @@ TestAabbQueryWithTransforms(const std::string & basePath)
   maxCorner[2] = 7.0;
 
   std::cerr << "[XfTest] QueryAabb before transform" << std::endl;
+  {
+    const auto & offsets = original->GetOffsets();
+    std::cerr << "[XfTest] pre-query state streamlines=" << original->GetNumberOfStreamlines()
+              << " vertices=" << original->GetNumberOfVertices()
+              << " offsets.size=" << offsets.size()
+              << " has_handle=" << original->HasTrxHandle();
+    if (!offsets.empty())
+    {
+      std::cerr << " offsets.front=" << offsets.front()
+                << " offsets.back=" << offsets.back();
+    }
+    std::cerr << std::endl;
+  }
   const size_t expectedBefore = ComputeAabbIntersectionCount(original, minCorner, maxCorner);
   std::cerr << "[XfTest] expectedBefore=" << expectedBefore << " calling QueryAabb" << std::endl;
   const auto   subsetBefore = original->QueryAabb(minCorner, maxCorner);
