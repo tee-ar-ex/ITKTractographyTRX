@@ -93,7 +93,9 @@ ComputeAabbIntersectionCount(const itk::TrxStreamlineData *           data,
     return 0;
   }
 
+  std::cerr << "[CAI] GetOrBuildStreamlineAabbs n=" << data->GetNumberOfStreamlines() << std::endl;
   const auto & aabbs = data->GetOrBuildStreamlineAabbs();
+  std::cerr << "[CAI] aabbs.size()=" << aabbs.size() << std::endl;
   if (aabbs.empty())
   {
     return 0;
@@ -683,7 +685,9 @@ TestAabbQueryWithTransforms(const std::string & basePath)
 
   std::cerr << "[XfTest] QueryAabb before transform" << std::endl;
   const size_t expectedBefore = ComputeAabbIntersectionCount(original, minCorner, maxCorner);
+  std::cerr << "[XfTest] expectedBefore=" << expectedBefore << " calling QueryAabb" << std::endl;
   const auto   subsetBefore = original->QueryAabb(minCorner, maxCorner);
+  std::cerr << "[XfTest] QueryAabb returned" << std::endl;
   if (!subsetBefore || subsetBefore->GetNumberOfStreamlines() != expectedBefore)
   {
     std::cerr << "Unexpected AABB count before transform." << std::endl;
