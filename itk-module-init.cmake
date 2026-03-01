@@ -1,4 +1,132 @@
-find_package(trx-cpp REQUIRED)
+set(_TractographyTRX_CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
+list(PREPEND CMAKE_MODULE_PATH "${_TractographyTRX_CMAKE_MODULE_PATH}")
+set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" CACHE STRING "CMake module search path" FORCE)
+
+option(TractographyTRX_FETCH_TRX_CPP "Fetch trx-cpp if not found" ON)
+set(TRX_CPP_GIT_TAG "main" CACHE STRING "trx-cpp git tag")
+
+find_package(trx-cpp QUIET)
+if(trx-cpp_FOUND)
+  message(STATUS "Trx-cpp found via find_package. trx-cpp_DIR=${trx-cpp_DIR}")
+  if(TARGET trx-cpp::trx)
+    get_target_property(_trx_cpp_location trx-cpp::trx IMPORTED_LOCATION)
+    if(_trx_cpp_location)
+      message(STATUS "Trx-cpp imported location: ${_trx_cpp_location}")
+    endif()
+  endif()
+endif()
+if(NOT trx-cpp_FOUND)
+  if(TractographyTRX_FETCH_TRX_CPP)
+    set(TRX_BUILD_TESTS OFF)
+    set(TRX_BUILD_EXAMPLES OFF)
+    set(TRX_BUILD_BENCHMARKS OFF)
+    if(CMAKE_VERSION VERSION_LESS 3.11)
+      message(FATAL_ERROR "trx-cpp not found and CMake < 3.11 cannot fetch it. Set trx-cpp_DIR or update CMake.")
+    endif()
+    include(FetchContent)
+    find_package(ZLIB QUIET)
+    if(NOT ZLIB_FOUND AND ITK_DIR)
+      set(_itk_zlib_include "${ITK_DIR}/Modules/ThirdParty/ZLIB/src")
+      if(EXISTS "${_itk_zlib_include}/zlib.h")
+        set(ZLIB_INCLUDE_DIR "${_itk_zlib_include}" CACHE PATH "ZLIB include dir" FORCE)
+      elseif(EXISTS "${_itk_zlib_include}/itkzlib-ng/zlib.h")
+        set(ZLIB_INCLUDE_DIR "${_itk_zlib_include}/itkzlib-ng" CACHE PATH "ZLIB include dir" FORCE)
+      endif()
+      file(GLOB _itk_zlib_libs
+        "${ITK_DIR}/lib/*zlib*"
+        "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/*zlib*"
+        "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/itkzlib-ng/*zlib*"
+        "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/Release/*zlib*"
+        "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/Debug/*zlib*"
+      )
+      list(FILTER _itk_zlib_libs INCLUDE REGEX ".*\\.(lib|a|so|dylib)$")
+      if(_itk_zlib_libs)
+        list(GET _itk_zlib_libs 0 _itk_zlib_lib)
+        set(ZLIB_LIBRARY "${_itk_zlib_lib}" CACHE FILEPATH "ZLIB library" FORCE)
+      endif()
+      unset(_itk_zlib_include)
+      unset(_itk_zlib_libs)
+      unset(_itk_zlib_lib)
+      find_package(ZLIB QUIET)
+    endif()
+    if(NOT ZLIB_FOUND)
+      message(STATUS "ZLIB not found via ITK; fetching v1.3.1")
+      set(SKIP_INSTALL_ALL ON)
+      set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+      set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+      FetchContent_Declare(
+        zlib
+        GIT_REPOSITORY https://github.com/madler/zlib.git
+        GIT_TAG v1.3.1
+      )
+      FetchContent_MakeAvailable(zlib)
+      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS} CACHE BOOL "" FORCE)
+      unset(_saved_BUILD_SHARED_LIBS)
+      if(TARGET zlibstatic)
+        set(ZLIB_LIBRARY zlibstatic CACHE STRING "ZLIB library target" FORCE)
+      elseif(TARGET zlib)
+        set(ZLIB_LIBRARY zlib CACHE STRING "ZLIB library target" FORCE)
+      endif()
+      if(zlib_SOURCE_DIR)
+        set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" CACHE PATH "ZLIB include dir" FORCE)
+      endif()
+    endif()
+    find_package(libzip QUIET)
+    if(NOT libzip_FOUND)
+      message(STATUS "libzip not found; fetching v1.11.4")
+      set(LIBZIP_DO_INSTALL OFF)
+      set(BUILD_TOOLS OFF)
+      set(BUILD_REGRESS OFF)
+      set(BUILD_EXAMPLES OFF)
+      set(BUILD_DOC OFF)
+      FetchContent_Declare(
+        libzip
+        GIT_REPOSITORY https://github.com/nih-at/libzip.git
+        GIT_TAG v1.11.4
+      )
+      set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+      set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+      FetchContent_MakeAvailable(libzip)
+      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS} CACHE BOOL "" FORCE)
+      unset(_saved_BUILD_SHARED_LIBS)
+      if(TARGET zip)
+        set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
+      endif()
+    endif()
+    # Hint Eigen3 for trx-cpp's find_package(Eigen3) via our FindEigen3.cmake
+    if(ITK_SOURCE_DIR AND EXISTS "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
+      set(EIGEN3_INCLUDE_DIR "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
+    elseif(ITK_DIR AND EXISTS "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
+      set(EIGEN3_INCLUDE_DIR "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
+    elseif(ITK_DIR)
+      get_filename_component(_itk_build_parent "${ITK_DIR}" DIRECTORY)
+      set(_itk_source_candidate "${_itk_build_parent}/ITK")
+      if(EXISTS "${_itk_source_candidate}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
+        set(EIGEN3_INCLUDE_DIR "${_itk_source_candidate}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
+      endif()
+      unset(_itk_build_parent)
+      unset(_itk_source_candidate)
+    endif()
+    # Create Eigen3::Eigen target before trx-cpp needs it
+    find_package(Eigen3 QUIET)
+    message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
+    FetchContent_Declare(
+      trx_cpp
+      GIT_REPOSITORY https://github.com/tee-ar-ex/trx-cpp.git
+      GIT_TAG ${TRX_CPP_GIT_TAG}
+    )
+    set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
+    set(BUILD_SHARED_LIBS OFF)
+    FetchContent_MakeAvailable(trx_cpp)
+    set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
+    unset(_saved_BUILD_SHARED_LIBS)
+    if(TARGET trx)
+      set_target_properties(trx PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
+  else()
+    find_package(trx-cpp REQUIRED)
+  endif()
+endif()
 
 # When this module is loaded by an app, load trx-cpp too.
 set(TractographyTRX_EXPORT_CODE_INSTALL "

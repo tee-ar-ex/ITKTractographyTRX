@@ -15,7 +15,10 @@ ITK/InsightToolkit reStructuredText style. Start with
 ### Dependencies
 
 TractographyTRX depends on `trx-cpp`, which provides the `trx-cpp::trx` CMake
-target. Ensure `trx-cpp` is discoverable via `find_package(trx-cpp)`.
+target. It is fetched automatically by default, or you can make it discoverable
+via `find_package(trx-cpp)` (e.g. by setting `trx-cpp_DIR`).
+
+Benchmark builds additionally require Google Benchmark (`benchmark::benchmark`).
 
 ### Standalone build (requires ITK)
 
@@ -38,3 +41,14 @@ cmake -S path/to/ITK -B itk-build \
   -Dtrx-cpp_DIR=/path/to/trx-cpp/lib/cmake/trx-cpp
 cmake --build itk-build
 ```
+
+### Benchmarks
+
+```
+cmake -S . -B build-release \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DTractographyTRX_BUILD_BENCHMARKS=ON
+cmake --build build-release --target bench_trx_itk_realdata
+```
+
+See `Documentation/Benchmarks.rst` for dataset setup and benchmark flags.

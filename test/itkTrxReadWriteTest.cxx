@@ -56,15 +56,23 @@ itkTrxReadWriteTest(int argc, char * argv[])
       std::cerr << "Expected float32 positions in output." << std::endl;
       return false;
     }
-    if (output->GetNumberOfVertices() != 5 || output->GetNumberOfStreamlines() != 2)
+    const auto nbVertices = output->GetNumberOfVertices();
+    const auto nbStreamlines = output->GetNumberOfStreamlines();
+    if (nbVertices != 5 || nbStreamlines != 2)
     {
-      std::cerr << "Unexpected vertex or streamline count." << std::endl;
+      std::cerr << "Unexpected vertex or streamline count. vertices=" << nbVertices
+                << " streamlines=" << nbStreamlines << std::endl;
       return false;
     }
     const auto & offsets = output->GetOffsets();
-    if (offsets.size() != 2 || offsets[0] != 0 || offsets[1] != 3)
+    if (offsets.size() != 3 || offsets[0] != 0 || offsets[1] != 3 || offsets[2] != 5)
     {
-      std::cerr << "Unexpected offsets." << std::endl;
+      std::cerr << "Unexpected offsets. size=" << offsets.size();
+      if (!offsets.empty())
+      {
+        std::cerr << " first=" << offsets.front() << " last=" << offsets.back();
+      }
+      std::cerr << std::endl;
       return false;
     }
 
@@ -89,6 +97,14 @@ itkTrxReadWriteTest(int argc, char * argv[])
   };
 
   auto roundTrip = [&](const std::string & outputPath, bool useCompression, bool expectDirectory) -> bool {
+    if (itksys::SystemTools::FileIsDirectory(outputPath))
+    {
+      itksys::SystemTools::RemoveADirectory(outputPath);
+    }
+    else if (itksys::SystemTools::FileExists(outputPath, true))
+    {
+      itksys::SystemTools::RemoveFile(outputPath);
+    }
     auto writer = itk::TrxStreamWriter::New();
     writer->SetFileName(outputPath);
     writer->SetUseCompression(useCompression);

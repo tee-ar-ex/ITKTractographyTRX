@@ -1,9 +1,11 @@
-cmake_minimum_required(VERSION 3.10.2 FATAL_ERROR)
-cmake_policy(VERSION 3.10.2)
+cmake_minimum_required(VERSION 3.16.3 FATAL_ERROR)
+cmake_policy(VERSION 3.16.3)
 
 project(TractographyTRX)
 
 set(TractographyTRX_LIBRARIES TractographyTRX)
+
+option(TractographyTRX_BUILD_BENCHMARKS "Build TractographyTRX benchmarks" OFF)
 
 if(NOT ITK_SOURCE_DIR)
   include(itk-module-init.cmake)
@@ -13,4 +15,9 @@ if(NOT ITK_SOURCE_DIR)
 else()
   include(itk-module-init.cmake)
   itk_module_impl()
+endif()
+
+if(TractographyTRX_BUILD_BENCHMARKS)
+  find_package(benchmark REQUIRED)
+  add_subdirectory(bench)
 endif()

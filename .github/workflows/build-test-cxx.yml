@@ -1,0 +1,18 @@
+name: Build, test (C++)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  build-test-cxx:
+    uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-cxx.yml@main
+    with:
+      itk-cmake-options: >-
+        -DITK_BUILD_DEFAULT_MODULES:BOOL=OFF
+        -DITKGroup_Core:BOOL=ON
+        -DITKGroup_Transform:BOOL=ON
+        -DModule_ITKEigen3:BOOL=ON
+      cmake-options: ""
