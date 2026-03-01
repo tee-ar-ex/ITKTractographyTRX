@@ -732,14 +732,18 @@ TestAabbQueryWithTransforms(const std::string & basePath)
   std::cerr << "[XfTest] Streaming " << totalStreamlines << " streamlines" << std::endl;
   for (size_t i = 0; i < totalStreamlines; ++i)
   {
+    if (i == 0) std::cerr << "[XfTest] loop i=0 GetStreamlineRange" << std::endl;
     itk::TrxStreamWriter::StreamlineType points;
     const auto range = originalForStream->GetStreamlineRange(static_cast<DataType::SizeValueType>(i));
+    if (i == 0) std::cerr << "[XfTest] loop i=0 iterating range" << std::endl;
     for (const auto & point : range)
     {
       const auto transformed = transform->TransformPoint(point);
       points.push_back(transformed);
     }
+    if (i == 0) std::cerr << "[XfTest] loop i=0 PushStreamline" << std::endl;
     writer2->PushStreamline(points);
+    if (i == 0) std::cerr << "[XfTest] loop i=0 done" << std::endl;
   }
   std::cerr << "[XfTest] writer2->Finalize()" << std::endl;
   writer2->Finalize();
