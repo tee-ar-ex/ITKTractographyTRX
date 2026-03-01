@@ -65,7 +65,7 @@ itkTrxReadWriteTest(int argc, char * argv[])
       return false;
     }
     const auto & offsets = output->GetOffsets();
-    if (offsets.size() != 2 || offsets[0] != 0 || offsets[1] != 3)
+    if (offsets.size() != 3 || offsets[0] != 0 || offsets[1] != 3 || offsets[2] != 5)
     {
       std::cerr << "Unexpected offsets. size=" << offsets.size();
       if (!offsets.empty())

@@ -248,7 +248,7 @@ TestBasicRoundTrip(const std::string & basePath)
     return false;
   }
   const auto & offsets = output->GetOffsets();
-  if (offsets.size() != 2 || offsets[0] != 0 || offsets[1] != 3)
+  if (offsets.size() != 3 || offsets[0] != 0 || offsets[1] != 3 || offsets[2] != 5)
   {
     std::cerr << "Unexpected offsets. size=" << offsets.size();
     if (!offsets.empty())
@@ -604,6 +604,10 @@ TestAabbQueryManyStreamlines(const std::string & basePath)
   maxCorner[1] = 1.1;
   maxCorner[2] = 0.55;
 
+  std::cerr << "[AabbMany] computing expected count" << std::endl;
+  const size_t expectedCount = ComputeAabbIntersectionCount(output, minCorner, maxCorner);
+  std::cerr << "[AabbMany] expectedCount=" << expectedCount << std::endl;
+
   std::cerr << "[AabbMany] calling QueryAabb" << std::endl;
   auto subset = output->QueryAabb(minCorner, maxCorner);
   std::cerr << "[AabbMany] QueryAabb returned" << std::endl;
@@ -629,8 +633,6 @@ TestAabbQueryManyStreamlines(const std::string & basePath)
   rasMax[0] = std::max(rasMinInput[0], rasMaxInput[0]);
   rasMax[1] = std::max(rasMinInput[1], rasMaxInput[1]);
   rasMax[2] = std::max(rasMinInput[2], rasMaxInput[2]);
-
-  const size_t expectedCount = ComputeAabbIntersectionCount(output, minCorner, maxCorner);
 
   const auto subsetStreamlines = subset->GetNumberOfStreamlines();
   const size_t diff = subsetStreamlines > expectedCount ? subsetStreamlines - expectedCount

@@ -177,8 +177,8 @@ public:
     {
       return;
     }
-    offsets.reserve(static_cast<size_t>(mapped.size() - 1));
-    for (Eigen::Index i = 0; i + 1 < mapped.size(); ++i)
+    offsets.reserve(static_cast<size_t>(mapped.size()));
+    for (Eigen::Index i = 0; i < mapped.size(); ++i)
     {
       offsets.push_back(static_cast<TrxStreamlineData::OffsetType>(mapped(i)));
     }
@@ -374,15 +374,13 @@ TrxStreamlineData::GetStreamline(SizeValueType streamlineIndex) const
 TrxStreamlineData::StreamlinePointRange
 TrxStreamlineData::GetStreamlineRange(SizeValueType streamlineIndex) const
 {
-  if (streamlineIndex >= m_Offsets.size())
+  if (streamlineIndex >= GetNumberOfStreamlines())
   {
     itkExceptionMacro("Streamline index out of range.");
   }
 
   const SizeValueType start = static_cast<SizeValueType>(m_Offsets[streamlineIndex]);
-  const SizeValueType end = (streamlineIndex + 1 < m_Offsets.size())
-                              ? static_cast<SizeValueType>(m_Offsets[streamlineIndex + 1])
-                              : m_NumberOfVertices;
+  const SizeValueType end = static_cast<SizeValueType>(m_Offsets[streamlineIndex + 1]);
   return StreamlinePointRange(this, start, end);
 }
 
@@ -393,15 +391,13 @@ TrxStreamlineData::GetStreamlineView(SizeValueType streamlineIndex, StreamlineVi
   {
     return false;
   }
-  if (streamlineIndex >= m_Offsets.size())
+  if (streamlineIndex >= GetNumberOfStreamlines())
   {
     itkExceptionMacro("Streamline index out of range.");
   }
 
   const SizeValueType start = static_cast<SizeValueType>(m_Offsets[streamlineIndex]);
-  const SizeValueType end = (streamlineIndex + 1 < m_Offsets.size())
-                              ? static_cast<SizeValueType>(m_Offsets[streamlineIndex + 1])
-                              : m_NumberOfVertices;
+  const SizeValueType end = static_cast<SizeValueType>(m_Offsets[streamlineIndex + 1]);
   if (end <= start)
   {
     view = StreamlineView{};
@@ -442,6 +438,7 @@ TrxStreamlineData::ForEachStreamlineChunked(
 
   if (m_PositionsLoaded && !m_Offsets.empty())
   {
+    const SizeValueType nbStreamlines = GetNumberOfStreamlines();
     auto visit = [&](const auto & positions) {
       using Scalar = typename std::remove_reference_t<decltype(positions)>::value_type;
       CoordinateType coordType = CoordinateType::Float32;
@@ -453,12 +450,10 @@ TrxStreamlineData::ForEachStreamlineChunked(
       {
         coordType = CoordinateType::Float64;
       }
-      for (SizeValueType i = 0; i < static_cast<SizeValueType>(m_Offsets.size()); ++i)
+      for (SizeValueType i = 0; i < nbStreamlines; ++i)
       {
         const SizeValueType start = static_cast<SizeValueType>(m_Offsets[i]);
-        const SizeValueType end = (i + 1 < static_cast<SizeValueType>(m_Offsets.size()))
-                                    ? static_cast<SizeValueType>(m_Offsets[i + 1])
-                                    : m_NumberOfVertices;
+        const SizeValueType end = static_cast<SizeValueType>(m_Offsets[i + 1]);
         if (end <= start)
         {
           fn(i, nullptr, 0, coordType, requestedSystem);
@@ -572,10 +567,11 @@ TrxStreamlineData::SetTrxHandle(const std::shared_ptr<TrxHandleBase> & trxHandle
 
   const auto nbStreamlines = trxHandle->NumStreamlines();
   m_Offsets.clear();
-  m_Offsets.reserve(nbStreamlines);
+  m_Offsets.reserve(nbStreamlines + 1);
   trxHandle->FillOffsets(m_Offsets);
 
   m_NumberOfVertices = static_cast<SizeValueType>(trxHandle->NumVertices());
+  EnsureOffsetsSentinel();
   m_CoordinateSystem = CoordinateSystem::LPS;
   m_AabbCacheValid = false;
 
@@ -728,6 +724,7 @@ void
 TrxStreamlineData::SetOffsets(std::vector<OffsetType> && offsets)
 {
   m_Offsets = std::move(offsets);
+  EnsureOffsetsSentinel();
   m_AabbCacheValid = false;
   this->Modified();
 }
@@ -741,7 +738,11 @@ TrxStreamlineData::GetNumberOfVertices() const
 SizeValueType
 TrxStreamlineData::GetNumberOfStreamlines() const
 {
-  return static_cast<SizeValueType>(m_Offsets.size());
+  if (m_Offsets.empty())
+  {
+    return 0;
+  }
+  return static_cast<SizeValueType>(m_Offsets.size() - 1);
 }
 
 void
@@ -844,11 +845,12 @@ CopySubsetFromLps(const TPositions & positions,
                   std::vector<TScalar> &                             outPositions,
                   std::vector<TrxStreamlineData::OffsetType> &        outOffsets)
 {
+  static_cast<void>(nbVertices);
   size_t totalVertices = 0;
   for (uint32_t idx : selected)
   {
     const uint64_t start = offsets[idx];
-    const uint64_t end = (idx + 1 < offsets.size()) ? offsets[idx + 1] : static_cast<uint64_t>(nbVertices);
+    const uint64_t end = offsets[idx + 1];
     totalVertices += static_cast<size_t>(end - start);
   }
 
@@ -861,7 +863,7 @@ CopySubsetFromLps(const TPositions & positions,
     const uint32_t idx = selected[i];
     outOffsets[i] = static_cast<TrxStreamlineData::OffsetType>(cursor);
     const uint64_t start = offsets[idx];
-    const uint64_t end = (idx + 1 < offsets.size()) ? offsets[idx + 1] : static_cast<uint64_t>(nbVertices);
+    const uint64_t end = offsets[idx + 1];
     for (uint64_t p = start; p < end; ++p, ++cursor)
     {
       const size_t base = static_cast<size_t>(p) * 3;
@@ -881,13 +883,14 @@ CopySubsetFromRas(const trx::TypedArray &                       positions,
                   std::vector<TScalar> &                             outPositions,
                   std::vector<TrxStreamlineData::OffsetType> &        outOffsets)
 {
+  static_cast<void>(nbVertices);
   const auto matrix = positions.as_matrix<TScalar>();
 
   size_t totalVertices = 0;
   for (uint32_t idx : selected)
   {
     const uint64_t start = offsets[idx];
-    const uint64_t end = (idx + 1 < offsets.size()) ? offsets[idx + 1] : static_cast<uint64_t>(nbVertices);
+    const uint64_t end = offsets[idx + 1];
     totalVertices += static_cast<size_t>(end - start);
   }
 
@@ -900,7 +903,7 @@ CopySubsetFromRas(const trx::TypedArray &                       positions,
     const uint32_t idx = selected[i];
     outOffsets[i] = static_cast<TrxStreamlineData::OffsetType>(cursor);
     const uint64_t start = offsets[idx];
-    const uint64_t end = (idx + 1 < offsets.size()) ? offsets[idx + 1] : static_cast<uint64_t>(nbVertices);
+    const uint64_t end = offsets[idx + 1];
     for (uint64_t p = start; p < end; ++p, ++cursor)
     {
       outPositions[cursor * 3] = static_cast<TScalar>(-matrix(static_cast<Eigen::Index>(p), 0));
@@ -927,7 +930,11 @@ TrxStreamlineData::SubsetStreamlines(const std::vector<uint32_t> & streamlineIds
     return TrxStreamlineData::New();
   }
 
-  const size_t nbStreamlines = m_Offsets.size();
+  const size_t nbStreamlines = static_cast<size_t>(GetNumberOfStreamlines());
+  if (nbStreamlines == 0)
+  {
+    return TrxStreamlineData::New();
+  }
   std::vector<uint32_t> selected;
   selected.reserve(streamlineIds.size());
   std::vector<uint8_t> seen(nbStreamlines, 0);
@@ -1054,12 +1061,11 @@ TrxStreamlineData::QueryAabb(const PointType & minCornerLps,
     {
       return TrxStreamlineData::New();
     }
-    const size_t count = std::min(aabbs.size(), m_Offsets.size());
+    const size_t count = std::min(aabbs.size(), static_cast<size_t>(GetNumberOfStreamlines()));
     for (size_t i = 0; i < count; ++i)
     {
       const uint64_t start = static_cast<uint64_t>(m_Offsets[i]);
-      const uint64_t end = (i + 1 < m_Offsets.size()) ? m_Offsets[i + 1]
-                                                       : static_cast<uint64_t>(m_NumberOfVertices);
+      const uint64_t end = m_Offsets[i + 1];
       if (end <= start)
       {
         continue;
@@ -1090,16 +1096,16 @@ TrxStreamlineData::QueryAabb(const PointType & minCornerLps,
   }
 
   std::vector<uint32_t> selected;
-  selected.reserve(m_Offsets.size());
+  selected.reserve(static_cast<size_t>(GetNumberOfStreamlines()));
 
   if (m_PositionsLoaded)
   {
     auto queryFromLps = [&](const auto & positions) {
-      for (size_t i = 0; i < m_Offsets.size(); ++i)
+      const size_t nbStreamlines = static_cast<size_t>(GetNumberOfStreamlines());
+      for (size_t i = 0; i < nbStreamlines; ++i)
       {
         const uint64_t start = m_Offsets[i];
-        const uint64_t end = (i + 1 < m_Offsets.size()) ? m_Offsets[i + 1]
-                                                        : static_cast<uint64_t>(m_NumberOfVertices);
+        const uint64_t end = m_Offsets[i + 1];
         if (end <= start)
         {
           continue;
@@ -1189,13 +1195,13 @@ TrxStreamlineData::GetOrBuildStreamlineAabbs() const
     itkExceptionMacro("No positions available to build AABB cache.");
   }
 
-  m_AabbCache.reserve(m_Offsets.size());
+  m_AabbCache.reserve(GetNumberOfStreamlines());
   auto buildFromLps = [&](const auto & positions) {
-    for (size_t i = 0; i < m_Offsets.size(); ++i)
+    const size_t nbStreamlines = static_cast<size_t>(GetNumberOfStreamlines());
+    for (size_t i = 0; i < nbStreamlines; ++i)
     {
       const uint64_t start = m_Offsets[i];
-      const uint64_t end = (i + 1 < m_Offsets.size()) ? m_Offsets[i + 1]
-                                                      : static_cast<uint64_t>(m_NumberOfVertices);
+      const uint64_t end = m_Offsets[i + 1];
       if (end <= start)
       {
         m_AabbCache.push_back({ 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 });
@@ -1255,11 +1261,26 @@ TrxStreamlineData::UpdateVertexCount()
 }
 
 void
+TrxStreamlineData::EnsureOffsetsSentinel()
+{
+  if (m_Offsets.empty())
+  {
+    return;
+  }
+  const auto sentinel = static_cast<OffsetType>(m_NumberOfVertices);
+  if (m_Offsets.back() != sentinel)
+  {
+    m_Offsets.push_back(sentinel);
+  }
+}
+
+void
 TrxStreamlineData::PrintSelf(std::ostream & os, Indent indent) const
 {
   Superclass::PrintSelf(os, indent);
   os << indent << "NumberOfVertices: " << m_NumberOfVertices << '\n';
-  os << indent << "NumberOfStreamlines: " << m_Offsets.size() << '\n';
+  const auto streamlines = m_Offsets.empty() ? 0 : static_cast<int>(m_Offsets.size() - 1);
+  os << indent << "NumberOfStreamlines: " << streamlines << '\n';
   os << indent << "CoordinateType: " << static_cast<int>(GetCoordinateType()) << '\n';
 }
 
@@ -1288,6 +1309,7 @@ TrxStreamlineData::Graft(const DataObject * data)
   m_HasVoxelToLps = trxData->m_HasVoxelToLps;
   m_HasDimensions = trxData->m_HasDimensions;
   m_CoordinateSystem = trxData->m_CoordinateSystem;
+  EnsureOffsetsSentinel();
 }
 
 void

@@ -47,7 +47,8 @@ class TrxStreamWriter;
  * \brief Data object holding TRX streamline points and offsets.
  *
  * Positions are stored as a contiguous array of XYZ triplets. Offsets define the
- * start index of each streamline in the positions array.
+ * start index of each streamline in the positions array and include a sentinel
+ * entry at the end equal to the total number of vertices.
  *
  * \ingroup TractographyTRX
  */
@@ -329,6 +330,9 @@ private:
 
   void
   UpdateVertexCount();
+
+  void
+  EnsureOffsetsSentinel();
 
   void
   EnsurePositionsLoaded() const;
