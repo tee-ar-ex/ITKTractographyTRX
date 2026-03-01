@@ -681,6 +681,7 @@ TestAabbQueryWithTransforms(const std::string & basePath)
   maxCorner[1] = 9.0;
   maxCorner[2] = 7.0;
 
+  std::cerr << "[XfTest] QueryAabb before transform" << std::endl;
   const size_t expectedBefore = ComputeAabbIntersectionCount(original, minCorner, maxCorner);
   const auto   subsetBefore = original->QueryAabb(minCorner, maxCorner);
   if (!subsetBefore || subsetBefore->GetNumberOfStreamlines() != expectedBefore)
@@ -697,7 +698,9 @@ TestAabbQueryWithTransforms(const std::string & basePath)
   translation[2] = 3.0;
   transform->Translate(translation);
 
+  std::cerr << "[XfTest] TransformInPlace" << std::endl;
   original->TransformInPlace(transform.GetPointer());
+  std::cerr << "[XfTest] QueryAabb after transform" << std::endl;
   const size_t expectedAfter = ComputeAabbIntersectionCount(original, minCorner, maxCorner);
   const auto   subsetAfter = original->QueryAabb(minCorner, maxCorner);
   if (!subsetAfter || subsetAfter->GetNumberOfStreamlines() != expectedAfter)
@@ -706,6 +709,7 @@ TestAabbQueryWithTransforms(const std::string & basePath)
     return false;
   }
 
+  std::cerr << "[XfTest] Writing streamed transform" << std::endl;
   const std::string transformedPath = basePath + "_xf";
   CleanupPath(transformedPath);
   auto writer2 = itk::TrxStreamWriter::New();
@@ -725,6 +729,7 @@ TestAabbQueryWithTransforms(const std::string & basePath)
   }
 
   const auto totalStreamlines = originalForStream->GetNumberOfStreamlines();
+  std::cerr << "[XfTest] Streaming " << totalStreamlines << " streamlines" << std::endl;
   for (size_t i = 0; i < totalStreamlines; ++i)
   {
     itk::TrxStreamWriter::StreamlineType points;
@@ -777,30 +782,37 @@ itkTrxWrapperTest(int argc, char * argv[])
     return EXIT_FAILURE;
   }
 
+  std::cerr << "[WrapperTest] Starting TestBasicRoundTrip" << std::endl;
   if (!TestBasicRoundTrip(basePath + "_basic"))
   {
     return EXIT_FAILURE;
   }
+  std::cerr << "[WrapperTest] Starting TestSubsetAndQuery" << std::endl;
   if (!TestSubsetAndQuery(basePath + "_subset"))
   {
     return EXIT_FAILURE;
   }
+  std::cerr << "[WrapperTest] Starting TestWriterMetadataRoundTrip" << std::endl;
   if (!TestWriterMetadataRoundTrip(basePath + "_meta"))
   {
     return EXIT_FAILURE;
   }
+  std::cerr << "[WrapperTest] Starting TestSimulatedStreamWriter" << std::endl;
   if (!TestSimulatedStreamWriter(basePath + "_simulated"))
   {
     return EXIT_FAILURE;
   }
+  std::cerr << "[WrapperTest] Starting TestAabbQueryManyStreamlines" << std::endl;
   if (!TestAabbQueryManyStreamlines(basePath + "_aabb"))
   {
     return EXIT_FAILURE;
   }
+  std::cerr << "[WrapperTest] Starting TestAabbQueryWithTransforms" << std::endl;
   if (!TestAabbQueryWithTransforms(basePath + "_aabb_xf"))
   {
     return EXIT_FAILURE;
   }
+  std::cerr << "[WrapperTest] All tests passed" << std::endl;
 
   return EXIT_SUCCESS;
 }
