@@ -126,20 +126,57 @@ if(NOT trx-cpp_FOUND)
     FetchContent_MakeAvailable(trx_cpp)
     set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
     unset(_saved_BUILD_SHARED_LIBS)
-    if(TARGET trx)
-      set_target_properties(trx PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    # itk-module-init.cmake is included twice by ITK's build system
+    # (ITKModuleEnablement and the module's own CMakeLists.txt), so guard
+    # install() calls with a cache variable to prevent double-export errors.
+    if(NOT _TractographyTRX_fetched_targets_installed)
+      set(_TractographyTRX_fetched_targets_installed TRUE CACHE INTERNAL "")
+      foreach(_fetched_target zip trx)
+        if(TARGET ${_fetched_target})
+          get_target_property(_aliased ${_fetched_target} ALIASED_TARGET)
+          get_target_property(_imported ${_fetched_target} IMPORTED)
+          if(NOT _aliased AND NOT _imported)
+            set_target_properties(${_fetched_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+            install(TARGETS ${_fetched_target}
+              EXPORT ITKTargets
+              ARCHIVE DESTINATION ${ITK_INSTALL_ARCHIVE_DIR}
+              LIBRARY DESTINATION ${ITK_INSTALL_LIBRARY_DIR}
+              RUNTIME DESTINATION ${ITK_INSTALL_RUNTIME_DIR}
+            )
+          endif()
+          unset(_aliased)
+          unset(_imported)
+        endif()
+      endforeach()
+      unset(_fetched_target)
+      # zlib is only FetchContent'd when neither system ZLIB nor ITK's bundled ZLIB
+      # was found; guard with zlib_POPULATED to avoid double-export with ITK's own target.
+      if(zlib_POPULATED)
+        foreach(_zlib_target zlibstatic zlib)
+          if(TARGET ${_zlib_target})
+            get_target_property(_aliased ${_zlib_target} ALIASED_TARGET)
+            get_target_property(_imported ${_zlib_target} IMPORTED)
+            if(NOT _aliased AND NOT _imported)
+              install(TARGETS ${_zlib_target}
+                EXPORT ITKTargets
+                ARCHIVE DESTINATION ${ITK_INSTALL_ARCHIVE_DIR}
+                LIBRARY DESTINATION ${ITK_INSTALL_LIBRARY_DIR}
+                RUNTIME DESTINATION ${ITK_INSTALL_RUNTIME_DIR}
+              )
+            endif()
+            unset(_aliased)
+            unset(_imported)
+          endif()
+        endforeach()
+        unset(_zlib_target)
+      endif()
     endif()
   else()
     find_package(trx-cpp REQUIRED)
   endif()
 endif()
 
-# When this module is loaded by an app, load trx-cpp too.
-set(TractographyTRX_EXPORT_CODE_INSTALL "
-find_package(trx-cpp REQUIRED)
-")
-set(TractographyTRX_EXPORT_CODE_BUILD "
-if(NOT ITK_BINARY_DIR)
-  find_package(trx-cpp REQUIRED)
-endif()
-")
+# trx-cpp is a PRIVATE implementation detail; downstream consumers of
+# TractographyTRX do not need to find it themselves.
+set(TractographyTRX_EXPORT_CODE_INSTALL "")
+set(TractographyTRX_EXPORT_CODE_BUILD "")
