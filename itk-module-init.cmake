@@ -92,6 +92,12 @@ if(NOT trx-cpp_FOUND)
       if(TARGET zip)
         set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
       endif()
+      # Expose the FetchContent build dir as libzip_DIR so that subsequent
+      # find_package(libzip) calls (e.g. from trx-cpp) resolve to this version
+      # rather than a system installation.
+      FetchContent_GetProperties(libzip BINARY_DIR _libzip_binary_dir)
+      set(libzip_DIR "${_libzip_binary_dir}" CACHE PATH "FetchContent libzip build dir" FORCE)
+      unset(_libzip_binary_dir)
     endif()
     # Hint Eigen3 for trx-cpp's find_package(Eigen3) via our FindEigen3.cmake
     if(ITK_SOURCE_DIR AND EXISTS "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
