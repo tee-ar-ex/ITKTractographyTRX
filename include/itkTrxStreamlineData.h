@@ -25,6 +25,7 @@
 #include "itkFixedArray.h"
 #include "itkMatrix.h"
 #include "itkPoint.h"
+#include "itkTrxGroup.h"
 
 #include "itk_eigen.h"
 #include ITK_EIGEN(Core)
@@ -33,6 +34,7 @@
 #include <cstddef>
 #include <functional>
 #include <iterator>
+#include <map>
 #include <memory>
 #include <string>
 #include <variant>
@@ -308,6 +310,57 @@ public:
   void
   Graft(const DataObject * data) override;
 
+  // -----------------------------------------------------------------------
+  // Group API
+  // -----------------------------------------------------------------------
+
+  /** True if the loaded TRX file contains at least one named group. */
+  bool
+  HasGroups() const;
+
+  /** Names of all groups in the file (order matches the TRX storage order). */
+  std::vector<std::string>
+  GetGroupNames() const;
+
+  /**
+   * Return a TrxGroup for the named group.  The result is cached so repeated
+   * calls are O(1).  Returns nullptr if no backing handle or name not found.
+   */
+  TrxGroup::Pointer
+  GetGroup(const std::string & name) const;
+
+  // -----------------------------------------------------------------------
+  // DPS / DPV field enumeration
+  // -----------------------------------------------------------------------
+
+  /** Names of all per-streamline scalar fields (DPS). */
+  std::vector<std::string>
+  GetDpsFieldNames() const;
+
+  /** Names of all per-vertex scalar fields (DPV). */
+  std::vector<std::string>
+  GetDpvFieldNames() const;
+
+  // -----------------------------------------------------------------------
+  // DPS / DPV value retrieval (widened to float)
+  // -----------------------------------------------------------------------
+
+  /**
+   * Per-streamline scalar field values, widened to float.
+   * For multi-column fields the values are returned flat in row-major order.
+   * Returns empty if no handle or field not found.
+   */
+  std::vector<float>
+  GetDpsField(const std::string & name) const;
+
+  /**
+   * Per-vertex scalar field values, widened to float.
+   * Length equals nVertices * nCols (usually nVertices for scalar fields).
+   * Returns empty if no handle or field not found.
+   */
+  std::vector<float>
+  GetDpvField(const std::string & name) const;
+
 protected:
   TrxStreamlineData() = default;
   ~TrxStreamlineData() override = default;
@@ -356,6 +409,11 @@ private:
   bool             m_HasVoxelToLps{ false };
   bool             m_HasDimensions{ false };
   CoordinateSystem m_CoordinateSystem{ CoordinateSystem::RAS };
+
+  mutable std::map<std::string, TrxGroup::Pointer> m_GroupCache;
+  std::vector<std::string>                         m_GroupNames;
+  std::vector<std::string>                         m_DpsFieldNames;
+  std::vector<std::string>                         m_DpvFieldNames;
 };
 
 std::shared_ptr<TrxHandleBase>

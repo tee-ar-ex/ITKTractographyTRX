@@ -2,6 +2,7 @@ set(
   TractographyTRX_SRCS
   itkTrxFileReader.cxx
   itkTrxFileWriter.cxx
+  itkTrxGroup.cxx
   itkTrxStreamlineIOBase.cxx
   itkTrxStreamlineIO.cxx
   itkTrxStreamlineIOFactory.cxx

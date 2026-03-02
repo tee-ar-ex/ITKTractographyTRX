@@ -28,6 +28,12 @@
 
 namespace itk
 {
+namespace detail
+{
+template <typename>
+inline constexpr bool always_false_v = false;
+} // namespace detail
+
 class TrxHandleBase
 {
 public:
@@ -70,6 +76,22 @@ public:
   GetOrBuildStreamlineAabbs() const = 0;
   virtual void
   InvalidateAabbCache() const = 0;
+  virtual std::vector<std::string>
+  GetGroupNames() const = 0;
+  virtual std::vector<uint32_t>
+  GetGroupIndices(const std::string & name) const = 0;
+  virtual std::vector<std::string>
+  GetDpsFieldNames() const = 0;
+  virtual std::vector<float>
+  GetDpsField(const std::string & name) const = 0;
+  virtual std::vector<std::string>
+  GetDpvFieldNames() const = 0;
+  virtual std::vector<float>
+  GetDpvField(const std::string & name) const = 0;
+  virtual std::vector<std::string>
+  GetDpgFieldNames(const std::string & groupName) const = 0;
+  virtual std::vector<float>
+  GetDpgField(const std::string & groupName, const std::string & fieldName) const = 0;
 };
 
 namespace
@@ -123,6 +145,17 @@ GetDimensionsFromHeader(const json & header, TrxStreamlineData::DimensionsType &
   }
   return true;
 }
+
+constexpr std::array<std::array<float, 3>, 10> k_GroupColorPalette = { { { { 0.89f, 0.10f, 0.11f } },
+                                                                          { { 0.12f, 0.47f, 0.71f } },
+                                                                          { { 0.20f, 0.63f, 0.17f } },
+                                                                          { { 1.00f, 0.50f, 0.00f } },
+                                                                          { { 0.55f, 0.34f, 0.29f } },
+                                                                          { { 0.97f, 0.51f, 0.75f } },
+                                                                          { { 0.50f, 0.50f, 0.50f } },
+                                                                          { { 0.89f, 0.82f, 0.11f } },
+                                                                          { { 0.73f, 0.48f, 0.69f } },
+                                                                          { { 0.07f, 0.82f, 0.82f } } } };
 } // namespace
 
 template <typename DT>
@@ -145,11 +178,19 @@ public:
     {
       return TrxStreamlineData::CoordinateType::Float16;
     }
-    if constexpr (std::is_same_v<DT, double>)
+    else if constexpr (std::is_same_v<DT, double>)
     {
       return TrxStreamlineData::CoordinateType::Float64;
     }
-    return TrxStreamlineData::CoordinateType::Float32;
+    else if constexpr (std::is_same_v<DT, float>)
+    {
+      return TrxStreamlineData::CoordinateType::Float32;
+    }
+    else
+    {
+      static_assert(detail::always_false_v<DT>, "Unsupported coordinate type.");
+      return TrxStreamlineData::CoordinateType::Float32;
+    }
   }
 
   size_t
@@ -287,6 +328,118 @@ public:
   InvalidateAabbCache() const override
   {
     m_Trx->invalidate_aabb_cache();
+  }
+
+  std::vector<std::string>
+  GetGroupNames() const override
+  {
+    std::vector<std::string> names;
+    for (const auto & kv : m_Trx->groups)
+    {
+      names.push_back(kv.first);
+    }
+    return names;
+  }
+
+  std::vector<uint32_t>
+  GetGroupIndices(const std::string & name) const override
+  {
+    auto it = m_Trx->groups.find(name);
+    if (it == m_Trx->groups.end())
+    {
+      return {};
+    }
+    const auto & mat = it->second->matrix();
+    return std::vector<uint32_t>(mat.data(), mat.data() + mat.size());
+  }
+
+  std::vector<std::string>
+  GetDpsFieldNames() const override
+  {
+    std::vector<std::string> names;
+    for (const auto & kv : m_Trx->data_per_streamline)
+    {
+      names.push_back(kv.first);
+    }
+    return names;
+  }
+
+  std::vector<float>
+  GetDpsField(const std::string & name) const override
+  {
+    const auto * dps = m_Trx->get_dps(name);
+    if (!dps)
+    {
+      return {};
+    }
+    const auto & mat = dps->matrix();
+    std::vector<float> result(static_cast<size_t>(mat.size()));
+    for (Eigen::Index i = 0; i < mat.size(); ++i)
+    {
+      result[static_cast<size_t>(i)] = static_cast<float>(mat.data()[i]);
+    }
+    return result;
+  }
+
+  std::vector<std::string>
+  GetDpvFieldNames() const override
+  {
+    std::vector<std::string> names;
+    for (const auto & kv : m_Trx->data_per_vertex)
+    {
+      names.push_back(kv.first);
+    }
+    return names;
+  }
+
+  std::vector<float>
+  GetDpvField(const std::string & name) const override
+  {
+    auto it = m_Trx->data_per_vertex.find(name);
+    if (it == m_Trx->data_per_vertex.end())
+    {
+      return {};
+    }
+    const auto & data = it->second->_data;
+    std::vector<float> result(static_cast<size_t>(data.size()));
+    for (Eigen::Index i = 0; i < data.size(); ++i)
+    {
+      result[static_cast<size_t>(i)] = static_cast<float>(data.data()[i]);
+    }
+    return result;
+  }
+
+  std::vector<std::string>
+  GetDpgFieldNames(const std::string & groupName) const override
+  {
+    auto git = m_Trx->data_per_group.find(groupName);
+    if (git == m_Trx->data_per_group.end())
+    {
+      return {};
+    }
+    std::vector<std::string> names;
+    for (const auto & kv : git->second)
+    {
+      names.push_back(kv.first);
+    }
+    return names;
+  }
+
+  std::vector<float>
+  GetDpgField(const std::string & groupName, const std::string & fieldName) const override
+  {
+    const auto * dpg = m_Trx->get_dpg(groupName, fieldName);
+    if (!dpg)
+    {
+      return {};
+    }
+    const auto & mat = dpg->matrix();
+    std::vector<float> result(static_cast<size_t>(mat.size()));
+    for (Eigen::Index i = 0; i < mat.size(); ++i)
+    {
+      result[static_cast<size_t>(i)] = static_cast<float>(mat.data()[i]);
+    }
+    return result;
   }
 
 private:
@@ -586,6 +739,11 @@ TrxStreamlineData::SetTrxHandle(const std::shared_ptr<TrxHandleBase> & trxHandle
   {
     SetDimensions(dims);
   }
+
+  m_GroupNames = trxHandle->GetGroupNames();
+  m_DpsFieldNames = trxHandle->GetDpsFieldNames();
+  m_DpvFieldNames = trxHandle->GetDpvFieldNames();
+  m_GroupCache.clear();
 
   this->Modified();
 }
@@ -1309,7 +1467,112 @@ TrxStreamlineData::Graft(const DataObject * data)
   m_HasVoxelToLps = trxData->m_HasVoxelToLps;
   m_HasDimensions = trxData->m_HasDimensions;
   m_CoordinateSystem = trxData->m_CoordinateSystem;
+
+  m_GroupNames = trxData->m_GroupNames;
+  m_DpsFieldNames = trxData->m_DpsFieldNames;
+  m_DpvFieldNames = trxData->m_DpvFieldNames;
+  m_GroupCache.clear();
+
   EnsureOffsetsSentinel();
+}
+
+bool
+TrxStreamlineData::HasGroups() const
+{
+  return !m_GroupNames.empty();
+}
+
+std::vector<std::string>
+TrxStreamlineData::GetGroupNames() const
+{
+  return m_GroupNames;
+}
+
+TrxGroup::Pointer
+TrxStreamlineData::GetGroup(const std::string & name) const
+{
+  auto it = m_GroupCache.find(name);
+  if (it != m_GroupCache.end())
+  {
+    return it->second;
+  }
+
+  if (!m_TrxHandle)
+  {
+    return nullptr;
+  }
+
+  auto indices = m_TrxHandle->GetGroupIndices(name);
+
+  std::map<std::string, std::vector<float>> dpgFields;
+  for (const auto & fieldName : m_TrxHandle->GetDpgFieldNames(name))
+  {
+    dpgFields[fieldName] = m_TrxHandle->GetDpgField(name, fieldName);
+  }
+
+  TrxGroup::ColorType color;
+  auto                colorIt = dpgFields.find("color");
+  if (colorIt == dpgFields.end())
+  {
+    colorIt = dpgFields.find("Color");
+  }
+  if (colorIt != dpgFields.end() && colorIt->second.size() >= 3)
+  {
+    color[0] = colorIt->second[0];
+    color[1] = colorIt->second[1];
+    color[2] = colorIt->second[2];
+  }
+  else
+  {
+    auto         nameIt = std::find(m_GroupNames.begin(), m_GroupNames.end(), name);
+    const size_t idx =
+      nameIt == m_GroupNames.end() ? 0 : static_cast<size_t>(std::distance(m_GroupNames.begin(), nameIt));
+    const auto & c = k_GroupColorPalette[idx % k_GroupColorPalette.size()];
+    color[0] = c[0];
+    color[1] = c[1];
+    color[2] = c[2];
+  }
+
+  auto group = TrxGroup::New();
+  group->SetName(name);
+  group->SetStreamlineIndices(std::move(indices));
+  group->SetDpgFields(std::move(dpgFields));
+  group->SetColor(color);
+
+  m_GroupCache[name] = group;
+  return group;
+}
+
+std::vector<std::string>
+TrxStreamlineData::GetDpsFieldNames() const
+{
+  return m_DpsFieldNames;
+}
+
+std::vector<std::string>
+TrxStreamlineData::GetDpvFieldNames() const
+{
+  return m_DpvFieldNames;
+}
+
+std::vector<float>
+TrxStreamlineData::GetDpsField(const std::string & name) const
+{
+  if (!m_TrxHandle)
+  {
+    return {};
+  }
+  return m_TrxHandle->GetDpsField(name);
+}
+
+std::vector<float>
+TrxStreamlineData::GetDpvField(const std::string & name) const
+{
+  if (!m_TrxHandle)
+  {
+    return {};
+  }
+  return m_TrxHandle->GetDpvField(name);
 }
 
 void

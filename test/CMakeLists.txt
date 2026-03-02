@@ -67,9 +67,14 @@ set(TractographyTRXTests
   itkTrxReadWriteTest.cxx
   itkTrxWrapperTest.cxx
   itkTrxGoldStandardTest.cxx
+  itkTrxGroupTest.cxx
 )
 
 createtestdriver(TractographyTRX "${TractographyTRX-Test_LIBRARIES}" "${TractographyTRXTests}")
+
+if(TARGET trx-cpp::trx)
+  target_link_libraries(TractographyTRXTestDriver PRIVATE trx-cpp::trx)
+endif()
 
 itk_add_test(
   NAME itkTrxReadWriteTest
@@ -106,4 +111,12 @@ set_tests_properties(
   PROPERTIES
     ENVIRONMENT
       "TRX_TEST_DATA_DIR=${TRX_TEST_DATA_DIR}"
+)
+
+itk_add_test(
+  NAME itkTrxGroupTest
+  COMMAND
+    TractographyTRXTestDriver
+    itkTrxGroupTest
+    ${ITK_TEST_OUTPUT_DIR}/trx_group
 )
