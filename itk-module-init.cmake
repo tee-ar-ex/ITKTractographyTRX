@@ -79,6 +79,11 @@ if(NOT trx-cpp_FOUND)
       set(BUILD_REGRESS OFF)
       set(BUILD_EXAMPLES OFF)
       set(BUILD_DOC OFF)
+      # TRX files only use deflate; disable optional codecs to avoid pulling
+      # in system bzip2/lzma/zstd as undeclared link dependencies.
+      set(ENABLE_BZIP2 OFF CACHE BOOL "" FORCE)
+      set(ENABLE_LZMA OFF CACHE BOOL "" FORCE)
+      set(ENABLE_ZSTD OFF CACHE BOOL "" FORCE)
       FetchContent_Declare(
         libzip
         GIT_REPOSITORY https://github.com/nih-at/libzip.git
