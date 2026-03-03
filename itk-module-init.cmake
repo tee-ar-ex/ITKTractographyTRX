@@ -1,6 +1,5 @@
 set(_TractographyTRX_CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
 list(PREPEND CMAKE_MODULE_PATH "${_TractographyTRX_CMAKE_MODULE_PATH}")
-set(CMAKE_MODULE_PATH "${CMAKE_MODULE_PATH}" CACHE STRING "CMake module search path" FORCE)
 
 option(TractographyTRX_FETCH_TRX_CPP "Fetch trx-cpp if not found" ON)
 set(TRX_CPP_GIT_TAG "main" CACHE STRING "trx-cpp git tag")
@@ -131,57 +130,145 @@ if(NOT trx-cpp_FOUND)
     FetchContent_MakeAvailable(trx_cpp)
     set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
     unset(_saved_BUILD_SHARED_LIBS)
-    # itk-module-init.cmake is included twice by ITK's build system
-    # (ITKModuleEnablement and the module's own CMakeLists.txt), so guard
-    # install() calls with a cache variable to prevent double-export errors.
+
+    # Static TractographyTRX links against trx; keep fetched concrete targets in
+    # ITKTargets when they are built in-tree so export generation remains valid.
     if(NOT _TractographyTRX_fetched_targets_installed)
-      set(_TractographyTRX_fetched_targets_installed TRUE CACHE INTERNAL "")
-      foreach(_fetched_target zip trx)
+      set(_TractographyTRX_install_archive_dir "${ITK_INSTALL_ARCHIVE_DIR}")
+      set(_TractographyTRX_install_library_dir "${ITK_INSTALL_LIBRARY_DIR}")
+      set(_TractographyTRX_install_runtime_dir "${ITK_INSTALL_RUNTIME_DIR}")
+      set(_TractographyTRX_did_install_fetched_targets FALSE)
+      if(NOT _TractographyTRX_install_archive_dir)
+        set(_TractographyTRX_install_archive_dir "lib")
+      endif()
+      if(NOT _TractographyTRX_install_library_dir)
+        set(_TractographyTRX_install_library_dir "lib")
+      endif()
+      if(NOT _TractographyTRX_install_runtime_dir)
+        set(_TractographyTRX_install_runtime_dir "bin")
+      endif()
+      foreach(_fetched_target trx zip)
         if(TARGET ${_fetched_target})
           get_target_property(_aliased ${_fetched_target} ALIASED_TARGET)
           get_target_property(_imported ${_fetched_target} IMPORTED)
           if(NOT _aliased AND NOT _imported)
-            set_target_properties(${_fetched_target} PROPERTIES POSITION_INDEPENDENT_CODE ON)
             install(TARGETS ${_fetched_target}
               EXPORT ITKTargets
-              ARCHIVE DESTINATION ${ITK_INSTALL_ARCHIVE_DIR}
-              LIBRARY DESTINATION ${ITK_INSTALL_LIBRARY_DIR}
-              RUNTIME DESTINATION ${ITK_INSTALL_RUNTIME_DIR}
+              ARCHIVE DESTINATION ${_TractographyTRX_install_archive_dir}
+              LIBRARY DESTINATION ${_TractographyTRX_install_library_dir}
+              RUNTIME DESTINATION ${_TractographyTRX_install_runtime_dir}
             )
+            set(_TractographyTRX_did_install_fetched_targets TRUE)
           endif()
           unset(_aliased)
           unset(_imported)
         endif()
       endforeach()
-      unset(_fetched_target)
-      # zlib is only FetchContent'd when neither system ZLIB nor ITK's bundled ZLIB
-      # was found; guard with zlib_POPULATED to avoid double-export with ITK's own target.
-      if(zlib_POPULATED)
-        foreach(_zlib_target zlibstatic zlib)
-          if(TARGET ${_zlib_target})
-            get_target_property(_aliased ${_zlib_target} ALIASED_TARGET)
-            get_target_property(_imported ${_zlib_target} IMPORTED)
-            if(NOT _aliased AND NOT _imported)
-              install(TARGETS ${_zlib_target}
-                EXPORT ITKTargets
-                ARCHIVE DESTINATION ${ITK_INSTALL_ARCHIVE_DIR}
-                LIBRARY DESTINATION ${ITK_INSTALL_LIBRARY_DIR}
-                RUNTIME DESTINATION ${ITK_INSTALL_RUNTIME_DIR}
-              )
-            endif()
-            unset(_aliased)
-            unset(_imported)
-          endif()
-        endforeach()
-        unset(_zlib_target)
+      if(_TractographyTRX_did_install_fetched_targets)
+        set(_TractographyTRX_fetched_targets_installed TRUE CACHE INTERNAL "")
       endif()
+      unset(_fetched_target)
+      unset(_TractographyTRX_did_install_fetched_targets)
+      unset(_TractographyTRX_install_archive_dir)
+      unset(_TractographyTRX_install_library_dir)
+      unset(_TractographyTRX_install_runtime_dir)
     endif()
   else()
     find_package(trx-cpp REQUIRED)
   endif()
 endif()
 
-# trx-cpp is a PRIVATE implementation detail; downstream consumers of
-# TractographyTRX do not need to find it themselves.
-set(TractographyTRX_EXPORT_CODE_INSTALL "")
-set(TractographyTRX_EXPORT_CODE_BUILD "")
+set(TractographyTRX_EXPORT_CODE_COMMON [=[
+# Restore non-ITK third-party targets for downstream consumers.
+# ITK::TractographyTRX may reference `trx` in its link interface.
+if(NOT TARGET trx)
+  find_package(trx-cpp QUIET CONFIG)
+  if(TARGET trx-cpp::trx)
+    add_library(trx INTERFACE IMPORTED)
+    set_target_properties(trx PROPERTIES
+      INTERFACE_LINK_LIBRARIES "trx-cpp::trx"
+    )
+  endif()
+endif()
+
+# Fallback for build-tree consumption where only libtrx exists.
+if(NOT TARGET trx)
+  find_library(_TractographyTRX_trx_library
+    NAMES trx
+    PATHS "${ITK_DIR}/lib"
+    NO_DEFAULT_PATH
+  )
+  if(_TractographyTRX_trx_library)
+    add_library(trx UNKNOWN IMPORTED)
+    set_target_properties(trx PROPERTIES
+      IMPORTED_LOCATION "${_TractographyTRX_trx_library}"
+    )
+  endif()
+  unset(_TractographyTRX_trx_library CACHE)
+  unset(_TractographyTRX_trx_library)
+endif()
+
+# Normalize libzip target aliases expected by trx-cpp across environments.
+if(NOT TARGET libzip::zip)
+  if(TARGET zip::zip)
+    add_library(libzip::zip INTERFACE IMPORTED)
+    set_target_properties(libzip::zip PROPERTIES
+      INTERFACE_LINK_LIBRARIES "zip::zip"
+    )
+  elseif(TARGET zip)
+    add_library(libzip::zip INTERFACE IMPORTED)
+    set_target_properties(libzip::zip PROPERTIES
+      INTERFACE_LINK_LIBRARIES "zip"
+    )
+  else()
+    find_package(libzip QUIET CONFIG)
+    if(NOT TARGET libzip::zip AND NOT TARGET zip::zip AND NOT TARGET zip)
+      find_library(_TractographyTRX_libzip_library NAMES zip libzip)
+      find_path(_TractographyTRX_libzip_include_dir zip.h)
+      if(_TractographyTRX_libzip_library)
+        add_library(libzip::zip UNKNOWN IMPORTED)
+        set_target_properties(libzip::zip PROPERTIES
+          IMPORTED_LOCATION "${_TractographyTRX_libzip_library}"
+        )
+        if(_TractographyTRX_libzip_include_dir)
+          set_target_properties(libzip::zip PROPERTIES
+            INTERFACE_INCLUDE_DIRECTORIES "${_TractographyTRX_libzip_include_dir}"
+          )
+        endif()
+      endif()
+      unset(_TractographyTRX_libzip_library CACHE)
+      unset(_TractographyTRX_libzip_include_dir CACHE)
+      unset(_TractographyTRX_libzip_library)
+      unset(_TractographyTRX_libzip_include_dir)
+    elseif(NOT TARGET libzip::zip AND TARGET zip::zip)
+      add_library(libzip::zip INTERFACE IMPORTED)
+      set_target_properties(libzip::zip PROPERTIES
+        INTERFACE_LINK_LIBRARIES "zip::zip"
+      )
+    elseif(NOT TARGET libzip::zip AND TARGET zip)
+      add_library(libzip::zip INTERFACE IMPORTED)
+      set_target_properties(libzip::zip PROPERTIES
+        INTERFACE_LINK_LIBRARIES "zip"
+      )
+    endif()
+  endif()
+endif()
+
+if(NOT TARGET zip::zip AND TARGET libzip::zip)
+  add_library(zip::zip INTERFACE IMPORTED)
+  set_target_properties(zip::zip PROPERTIES
+    INTERFACE_LINK_LIBRARIES "libzip::zip"
+  )
+endif()
+
+if(NOT TARGET zip AND TARGET libzip::zip)
+  add_library(zip INTERFACE IMPORTED)
+  set_target_properties(zip PROPERTIES
+    INTERFACE_LINK_LIBRARIES "libzip::zip"
+  )
+endif()
+]=])
+
+# Keep build-tree and install-tree dependency restoration aligned.
+set(TractographyTRX_EXPORT_CODE_BUILD "${TractographyTRX_EXPORT_CODE_COMMON}")
+set(TractographyTRX_EXPORT_CODE_INSTALL "${TractographyTRX_EXPORT_CODE_COMMON}")
