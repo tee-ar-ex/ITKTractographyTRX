@@ -141,11 +141,11 @@ public:
 
   /** Bytes in output artifact immediately before group append. */
   size_t
-  GetLastPreGroupFileBytes() const;
+  GetPreGroupFileBytes() const;
 
   /** Bytes in output artifact after group append (final output). */
   size_t
-  GetLastFinalFileBytes() const;
+  GetFinalFileBytes() const;
 
   /**
    * Morphological dilation radius applied to each label image before lookup,
@@ -184,8 +184,8 @@ private:
   std::string                     m_OutputFileName;
   unsigned int                    m_DilationRadius{ 0 };
   size_t                          m_MaxDpvBytes{ 512ULL * 1024ULL * 1024ULL };
-  size_t                          m_LastPreGroupFileBytes{ 0 };
-  size_t                          m_LastFinalFileBytes{ 0 };
+  size_t                          m_PreGroupFileBytes{ 0 };
+  size_t                          m_FinalFileBytes{ 0 };
 };
 
 } // namespace itk

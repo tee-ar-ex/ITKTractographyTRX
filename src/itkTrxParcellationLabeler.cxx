@@ -330,15 +330,15 @@ TrxParcellationLabeler::GetOutputFileName() const
 }
 
 size_t
-TrxParcellationLabeler::GetLastPreGroupFileBytes() const
+TrxParcellationLabeler::GetPreGroupFileBytes() const
 {
-  return m_LastPreGroupFileBytes;
+  return m_PreGroupFileBytes;
 }
 
 size_t
-TrxParcellationLabeler::GetLastFinalFileBytes() const
+TrxParcellationLabeler::GetFinalFileBytes() const
 {
-  return m_LastFinalFileBytes;
+  return m_FinalFileBytes;
 }
 
 void
@@ -356,8 +356,8 @@ TrxParcellationLabeler::Update()
   {
     itkExceptionMacro("No parcellations have been added.");
   }
-  m_LastPreGroupFileBytes = 0;
-  m_LastFinalFileBytes = 0;
+  m_PreGroupFileBytes = 0;
+  m_FinalFileBytes = 0;
 
   // ------------------------------------------------------------------
   // Phase 0: load and prepare all atlases
@@ -490,7 +490,7 @@ TrxParcellationLabeler::Update()
     }
 
     CopyTrxArtifact(m_InputFileName, m_OutputFileName);
-    m_LastPreGroupFileBytes = ComputeArtifactSizeBytes(m_OutputFileName);
+    m_PreGroupFileBytes = ComputeArtifactSizeBytes(m_OutputFileName);
     std::error_code ec;
     const bool      copiedIsDirectory = std::filesystem::is_directory(std::filesystem::path(m_OutputFileName), ec);
     if (!ec && copiedIsDirectory)
@@ -501,7 +501,7 @@ TrxParcellationLabeler::Update()
     {
       trx::append_groups_to_zip(m_OutputFileName, allGroups);
     }
-    m_LastFinalFileBytes = ComputeArtifactSizeBytes(m_OutputFileName);
+    m_FinalFileBytes = ComputeArtifactSizeBytes(m_OutputFileName);
     return;
   }
 
@@ -637,7 +637,7 @@ TrxParcellationLabeler::Update()
     TrxStreamlineData::CoordinateSystem::LPS);
 
   writer->Finalize();
-  m_LastPreGroupFileBytes = ComputeArtifactSizeBytes(m_OutputFileName);
+  m_PreGroupFileBytes = ComputeArtifactSizeBytes(m_OutputFileName);
 
   // Detect output format from file extension.
   const std::string ext = std::filesystem::path(m_OutputFileName).extension().string();
@@ -649,7 +649,7 @@ TrxParcellationLabeler::Update()
   {
     trx::append_groups_to_directory(m_OutputFileName, allGroups);
   }
-  m_LastFinalFileBytes = ComputeArtifactSizeBytes(m_OutputFileName);
+  m_FinalFileBytes = ComputeArtifactSizeBytes(m_OutputFileName);
 }
 
 void
@@ -660,8 +660,8 @@ TrxParcellationLabeler::PrintSelf(std::ostream & os, Indent indent) const
   os << indent << "OutputFileName: " << m_OutputFileName << "\n";
   os << indent << "DilationRadius: " << m_DilationRadius << "\n";
   os << indent << "MaxDpvBytes: " << m_MaxDpvBytes << "\n";
-  os << indent << "LastPreGroupFileBytes: " << m_LastPreGroupFileBytes << "\n";
-  os << indent << "LastFinalFileBytes: " << m_LastFinalFileBytes << "\n";
+  os << indent << "PreGroupFileBytes: " << m_PreGroupFileBytes << "\n";
+  os << indent << "FinalFileBytes: " << m_FinalFileBytes << "\n";
   os << indent << "Parcellations: " << m_Parcellations.size() << "\n";
   for (size_t i = 0; i < m_Parcellations.size(); ++i)
   {

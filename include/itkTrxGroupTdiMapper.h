@@ -25,6 +25,7 @@
 #include "itkObjectFactory.h"
 #include "itkTrxStreamlineData.h"
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,10 +33,31 @@ namespace itk
 {
 /**
  * \class TrxGroupTdiMapper
- * \brief Maps one TRX group to a 3D TDI image on a reference NIfTI grid.
+ * \brief Maps a selection of TRX streamlines to a 3D Track Density Image (TDI).
  *
- * Streamlines are traversed in native TRX RAS coordinates and mapped to voxel
- * indices using only the caller-provided reference image geometry.
+ * Streamlines are selected via a named group (SetGroupName()), an explicit index
+ * list (SetSelectedStreamlineIds()), or the intersection of both.  At least one
+ * selector must be set before calling Update().
+ *
+ * Coordinate mapping uses the caller-provided reference NIfTI geometry
+ * (SetReferenceImageFileName()) exclusively; the TRX header geometry is ignored.
+ * Streamline coordinates are consumed in native TRX RAS space for efficiency,
+ * with the RAS-to-voxel transform computed internally from the reference image.
+ *
+ * ## Voxel statistics
+ *
+ * Each voxel touched by a streamline is counted at most once per streamline
+ * (NearestUniqueVoxelPerStreamline mode).  Two statistics are available:
+ * - **Sum** (default): the value accumulated per voxel equals the sum of
+ *   per-streamline weights (1.0 unless a DPS weight field is set).
+ * - **Mean**: divides the summed value by the number of distinct streamlines
+ *   that contributed to each voxel.
+ *
+ * ## Optional DPS weight field
+ *
+ * Set `Options::weightField` to the name of a 1D DPS field to use
+ * per-streamline weights instead of the default weight of 1.  Streamlines with
+ * non-finite or non-positive weights are skipped.
  *
  * \ingroup TractographyTRX
  */
@@ -69,8 +91,12 @@ public:
   {
     VoxelStatistic voxelStatistic{ VoxelStatistic::Sum };
     MappingMode    mappingMode{ MappingMode::NearestUniqueVoxelPerStreamline };
-    bool           useDpsWeightField{ false };
-    std::string    weightFieldName;
+    /**
+     * If set, the named 1D DPS field is used as a per-streamline weight.
+     * Streamlines with non-finite or non-positive weights are skipped.
+     * If not set, every streamline contributes a weight of 1.
+     */
+    std::optional<std::string> weightField;
   };
 
   void

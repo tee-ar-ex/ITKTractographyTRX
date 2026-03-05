@@ -51,7 +51,7 @@ PrintUsage(const char * exe)
             << "Notes:\n"
             << "  - Mapping uses TRX streamline coordinates in native RAS space.\n"
             << "  - Voxel assignment uses only the reference NIfTI geometry.\n"
-            << "  - Selection logic: (--group AND all-of) AND (any-of OR none) AND NOT(none-of).\n";
+            << "  - Selection logic: (--group AND all-of) AND (any-of, or all if unspecified) AND NOT(none-of).\n";
 }
 
 bool
@@ -311,8 +311,7 @@ main(int argc, char * argv[])
 
   if (!weightFieldName.empty())
   {
-    options.useDpsWeightField = true;
-    options.weightFieldName = weightFieldName;
+    options.weightField = weightFieldName;
   }
 
   try

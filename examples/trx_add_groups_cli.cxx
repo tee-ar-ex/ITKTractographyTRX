@@ -37,7 +37,7 @@ namespace
 struct AtlasSpec
 {
   std::string niftiPath;
-  std::string labelsPath;
+  std::string labelFilePath;
   std::string prefix;
 };
 
@@ -87,9 +87,9 @@ ParseAtlasSpec(const std::string & spec, AtlasSpec & out)
     return false;
   }
   out.niftiPath = parts[0];
-  out.labelsPath = parts[1];
+  out.labelFilePath = parts[1];
   out.prefix = parts[2];
-  return !(out.niftiPath.empty() || out.labelsPath.empty() || out.prefix.empty());
+  return !(out.niftiPath.empty() || out.labelFilePath.empty() || out.prefix.empty());
 }
 
 std::string
@@ -256,7 +256,7 @@ main(int argc, char * argv[])
     {
       itk::TrxParcellationLabeler::ParcellationSpec p;
       p.niftiPath = spec.niftiPath;
-      p.labelFilePath = spec.labelsPath;
+      p.labelFilePath = spec.labelFilePath;
       p.groupPrefix = spec.prefix;
       labeler->AddParcellation(p);
     }

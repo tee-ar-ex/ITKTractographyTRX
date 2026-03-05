@@ -314,16 +314,12 @@ TrxGroupTdiMapper::Update()
   }
 
   std::vector<float> weights;
-  if (m_Options.useDpsWeightField)
+  if (m_Options.weightField.has_value())
   {
-    if (m_Options.weightFieldName.empty())
-    {
-      itkGenericExceptionMacro("useDpsWeightField is true but WeightFieldName is empty.");
-    }
-    weights = data->GetDpsField(m_Options.weightFieldName);
+    weights = data->GetDpsField(*m_Options.weightField);
     if (weights.size() != static_cast<size_t>(nStreamlines))
     {
-      itkGenericExceptionMacro("DPS weight field '" << m_Options.weightFieldName << "' size mismatch. Expected "
+      itkGenericExceptionMacro("DPS weight field '" << *m_Options.weightField << "' size mismatch. Expected "
                                                     << nStreamlines << ", got " << weights.size());
     }
   }
@@ -454,8 +450,8 @@ TrxGroupTdiMapper::PrintSelf(std::ostream & os, Indent indent) const
   os << indent << "Options.VoxelStatistic: "
      << (m_Options.voxelStatistic == VoxelStatistic::Sum ? "Sum" : "Mean") << '\n';
   os << indent << "Options.MappingMode: NearestUniqueVoxelPerStreamline\n";
-  os << indent << "Options.UseDpsWeightField: " << (m_Options.useDpsWeightField ? "On" : "Off") << '\n';
-  os << indent << "Options.WeightFieldName: " << m_Options.weightFieldName << '\n';
+  os << indent << "Options.WeightField: "
+     << (m_Options.weightField.has_value() ? *m_Options.weightField : "(none)") << '\n';
   os << indent << "HasSelectedStreamlineIds: " << (m_HasSelectedStreamlineIds ? "On" : "Off") << '\n';
   os << indent << "SelectedStreamlineIds: " << m_SelectedStreamlineIds.size() << '\n';
 }

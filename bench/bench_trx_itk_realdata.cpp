@@ -633,9 +633,9 @@ static void BM_Parcellate(benchmark::State &state) {
     labeler->Update();
 
     const double pre_group_file_bytes =
-        static_cast<double>(labeler->GetLastPreGroupFileBytes());
+        static_cast<double>(labeler->GetPreGroupFileBytes());
     const double final_file_bytes =
-        static_cast<double>(labeler->GetLastFinalFileBytes());
+        static_cast<double>(labeler->GetFinalFileBytes());
     max_pre_group_file_bytes = std::max(max_pre_group_file_bytes, pre_group_file_bytes);
     max_output_file_bytes = std::max(max_output_file_bytes, final_file_bytes);
     max_group_overhead_bytes =

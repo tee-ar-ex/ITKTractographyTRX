@@ -70,7 +70,7 @@ TrxGroup::SetDpgFields(std::map<std::string, std::vector<float>> dpgFields)
 }
 
 SmartPointer<TrxStreamlineData>
-TrxGroup::GetStreamlines(const TrxStreamlineData * parent) const
+TrxGroup::GetStreamlines(TrxStreamlineData::ConstPointer parent) const
 {
   if (!parent)
   {
