@@ -38,12 +38,6 @@ namespace
 {
 using RefImageType = TrxGroupTdiMapper::OutputImageType;
 
-inline int
-RoundHalfIntegerUpToInt(double value)
-{
-  return static_cast<int>(std::floor(value + 0.5));
-}
-
 struct RasToVoxelState
 {
   std::array<double, 9> M{};
@@ -64,8 +58,6 @@ BuildRasToVoxelState(const RefImageType * image)
   const auto & spacing = image->GetSpacing();
   const auto & origin = image->GetOrigin();
 
-  // ITK image geometry is LPS. Build lps->voxel, then compose with
-  // ras->lps = diag(-1,-1,1) so mapping runs directly on TRX-native RAS points.
   const double lpsToVoxel[9] = { invDir(0, 0) / spacing[0],
                                  invDir(0, 1) / spacing[0],
                                  invDir(0, 2) / spacing[0],
@@ -97,13 +89,14 @@ BuildRasToVoxelState(const RefImageType * image)
 inline bool
 RasPointToIndex(const RasToVoxelState & state, double rx, double ry, double rz, int & i, int & j, int & k)
 {
+  using IndexValueType = RefImageType::IndexType::IndexValueType;
   const double fi = state.M[0] * rx + state.M[1] * ry + state.M[2] * rz + state.b[0];
   const double fj = state.M[3] * rx + state.M[4] * ry + state.M[5] * rz + state.b[1];
   const double fk = state.M[6] * rx + state.M[7] * ry + state.M[8] * rz + state.b[2];
 
-  i = RoundHalfIntegerUpToInt(fi);
-  j = RoundHalfIntegerUpToInt(fj);
-  k = RoundHalfIntegerUpToInt(fk);
+  i = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fi));
+  j = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fj));
+  k = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fk));
 
   const int startI = state.bufferStart[0];
   const int startJ = state.bufferStart[1];

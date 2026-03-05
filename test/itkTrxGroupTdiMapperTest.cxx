@@ -19,6 +19,7 @@
 #include "itkImage.h"
 #include "itkImageFileWriter.h"
 #include "itkNiftiImageIO.h"
+#include "itkMath.h"
 #include "itkTrxGroupTdiMapper.h"
 #include "itkTrxStreamWriter.h"
 #include "itkContinuousIndex.h"
@@ -173,12 +174,6 @@ Flatten(size_t i, size_t j, size_t k, size_t nx, size_t ny)
   return i + nx * (j + ny * k);
 }
 
-inline int
-RoundHalfIntegerUpToInt(double value)
-{
-  return static_cast<int>(std::floor(value + 0.5));
-}
-
 struct LpsToVoxelState
 {
   std::array<double, 9> M{};
@@ -223,10 +218,10 @@ BuildRasToVoxelState(const ImageType * image)
   const auto buffered = image->GetBufferedRegion();
   state.bufferStart = buffered.GetIndex();
   state.bufferSize = buffered.GetSize();
+
   const auto & invDir = image->GetInverseDirection();
   const auto & spacing = image->GetSpacing();
   const auto & origin = image->GetOrigin();
-
   const double lpsToVoxel[9] = { invDir(0, 0) / spacing[0],
                                  invDir(0, 1) / spacing[0],
                                  invDir(0, 2) / spacing[0],
@@ -237,7 +232,6 @@ BuildRasToVoxelState(const ImageType * image)
                                  invDir(2, 1) / spacing[2],
                                  invDir(2, 2) / spacing[2] };
   const double rasToLps[9] = { -1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0 };
-
   for (int r = 0; r < 3; ++r)
   {
     for (int c = 0; c < 3; ++c)
@@ -260,14 +254,13 @@ PhysicalPointToIndexLikeParcellation(const LpsToVoxelState & state,
                                      const ImageType::PointType & pointLps,
                                      ImageType::IndexType & index)
 {
+  using IndexValueType = ImageType::IndexType::IndexValueType;
   const double dx = pointLps[0] - state.origin[0];
   const double dy = pointLps[1] - state.origin[1];
   const double dz = pointLps[2] - state.origin[2];
-
-  const int i = RoundHalfIntegerUpToInt(state.M[0] * dx + state.M[1] * dy + state.M[2] * dz);
-  const int j = RoundHalfIntegerUpToInt(state.M[3] * dx + state.M[4] * dy + state.M[5] * dz);
-  const int k = RoundHalfIntegerUpToInt(state.M[6] * dx + state.M[7] * dy + state.M[8] * dz);
-
+  const int i = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(state.M[0] * dx + state.M[1] * dy + state.M[2] * dz));
+  const int j = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(state.M[3] * dx + state.M[4] * dy + state.M[5] * dz));
+  const int k = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(state.M[6] * dx + state.M[7] * dy + state.M[8] * dz));
   index[0] = i;
   index[1] = j;
   index[2] = k;
@@ -285,14 +278,13 @@ RasPointToIndexLikeGroupTdi(const RasToVoxelState & state,
                             const std::array<double, 3> & pointRas,
                             ImageType::IndexType & index)
 {
+  using IndexValueType = ImageType::IndexType::IndexValueType;
   const double fi = state.M[0] * pointRas[0] + state.M[1] * pointRas[1] + state.M[2] * pointRas[2] + state.b[0];
   const double fj = state.M[3] * pointRas[0] + state.M[4] * pointRas[1] + state.M[5] * pointRas[2] + state.b[1];
   const double fk = state.M[6] * pointRas[0] + state.M[7] * pointRas[1] + state.M[8] * pointRas[2] + state.b[2];
-
-  const int i = RoundHalfIntegerUpToInt(fi);
-  const int j = RoundHalfIntegerUpToInt(fj);
-  const int k = RoundHalfIntegerUpToInt(fk);
-
+  const int i = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fi));
+  const int j = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fj));
+  const int k = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fk));
   index[0] = i;
   index[1] = j;
   index[2] = k;
