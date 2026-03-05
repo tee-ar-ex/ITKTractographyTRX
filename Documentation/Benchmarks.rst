@@ -54,6 +54,29 @@ The benchmark binary also supports ``--reference-trx`` directly:
     --benchmark_out=bench/results/bench_trx_itk_realdata.json \
     --benchmark_out_format=json
 
+Plot benchmark results
+----------------------
+
+An R plotting helper adapted from ``trx-cpp`` is provided at
+``bench/plot_bench.R``. It reads benchmark JSON output and generates PNG plots
+for translate/write runtime + RSS, AABB query runtime + p50/p95, and
+parcellation runtime + RSS + output TRX size (when ``BM_Parcellate`` rows are
+present).
+
+.. code-block:: bash
+
+  Rscript bench/plot_bench.R \
+    --bench-dir bench/results \
+    --out-dir bench/results/plots
+
+Required R packages:
+
+* ``jsonlite``
+* ``ggplot2``
+* ``dplyr``
+* ``tidyr``
+* ``scales``
+
 Environment variables
 ---------------------
 

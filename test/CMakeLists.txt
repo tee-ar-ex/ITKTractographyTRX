@@ -68,6 +68,7 @@ set(TractographyTRXTests
   itkTrxWrapperTest.cxx
   itkTrxGoldStandardTest.cxx
   itkTrxGroupTest.cxx
+  itkTrxParcellationLabelingTest.cxx
 )
 
 createtestdriver(TractographyTRX "${TractographyTRX-Test_LIBRARIES}" "${TractographyTRXTests}")
@@ -119,4 +120,12 @@ itk_add_test(
     TractographyTRXTestDriver
     itkTrxGroupTest
     ${ITK_TEST_OUTPUT_DIR}/trx_group
+)
+
+itk_add_test(
+  NAME itkTrxParcellationLabelingTest
+  COMMAND
+    TractographyTRXTestDriver
+    itkTrxParcellationLabelingTest
+    ${ITK_TEST_OUTPUT_DIR}/trx_parcellation
 )

@@ -3,6 +3,7 @@
 #include <trx/trx.h>
 
 #include "itkTrxFileReader.h"
+#include "itkTrxParcellationLabeler.h"
 #include "itkTrxStreamWriter.h"
 #include "itkTrxStreamlineData.h"
 #include "itkTranslationTransform.h"
@@ -19,8 +20,6 @@
 #include <map>
 #include <mutex>
 #include <string>
-#include <tuple>
-#include <unordered_map>
 #include <vector>
 
 #if defined(__unix__) || defined(__APPLE__)
@@ -37,6 +36,14 @@ using Eigen::half;
 std::string g_reference_trx_path;
 size_t g_reference_streamline_count = 0;
 bool g_reference_has_dpv = false;
+
+// Parcellation benchmark inputs (populated from --bench-data-dir or individual flags).
+struct ParcellationFiles {
+  std::string niftiPath;
+  std::string labelPath;
+  std::string prefix;
+};
+std::vector<ParcellationFiles> g_parcellations;
 
 itk::TrxStreamlineData::Pointer g_itk_reference;
 std::unique_ptr<trx::TrxFile<half>> g_raw_reference;
@@ -521,11 +528,102 @@ BENCHMARK(BM_Raw_QueryAabb)
     ->UseManualTime()
     ->Unit(benchmark::kMillisecond);
 
+// ---------------------------------------------------------------------------
+// Parcellation benchmarks
+// ---------------------------------------------------------------------------
+
+// Run one full parcellation labeling pass (labeling + write + group append).
+// state.range(0) = number of streamlines; state.range(1) = dilation radius.
+static void BM_Parcellate(benchmark::State &state) {
+  const size_t streamlines = static_cast<size_t>(state.range(0));
+  const unsigned int dilation = static_cast<unsigned int>(state.range(1));
+
+  if (g_parcellations.empty()) {
+    state.SkipWithMessage("skipped: no parcellation files specified (use --bench-data-dir)");
+    return;
+  }
+  if (streamlines > g_reference_streamline_count) {
+    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+    return;
+  }
+
+  const auto &dataset = get_itk_subset(streamlines);
+
+  double max_rss_delta_kb = 0.0;
+  double max_output_file_bytes = 0.0;
+  double max_pre_group_file_bytes = 0.0;
+  double max_group_overhead_bytes = 0.0;
+  for (auto _ : state) {
+    const double rss_start = get_current_rss_kb();
+    const auto start = std::chrono::steady_clock::now();
+
+    const std::string out_path = make_temp_path("parcellate");
+
+    auto labeler = itk::TrxParcellationLabeler::New();
+    labeler->SetInput(dataset.data);
+    if (streamlines == g_reference_streamline_count)
+    {
+      // Copy-through mode preserves source payload encoding for full-dataset runs.
+      labeler->SetInputFileName(g_reference_trx_path);
+    }
+    labeler->SetOutputFileName(out_path);
+    labeler->SetDilationRadius(dilation);
+    for (const auto &p : g_parcellations) {
+      itk::TrxParcellationLabeler::ParcellationSpec spec;
+      spec.niftiPath = p.niftiPath;
+      spec.labelFilePath = p.labelPath;
+      spec.groupPrefix = p.prefix;
+      labeler->AddParcellation(spec);
+    }
+    labeler->Update();
+
+    const double pre_group_file_bytes =
+        static_cast<double>(labeler->GetLastPreGroupFileBytes());
+    const double final_file_bytes =
+        static_cast<double>(labeler->GetLastFinalFileBytes());
+    max_pre_group_file_bytes = std::max(max_pre_group_file_bytes, pre_group_file_bytes);
+    max_output_file_bytes = std::max(max_output_file_bytes, final_file_bytes);
+    max_group_overhead_bytes =
+        std::max(max_group_overhead_bytes, std::max(0.0, final_file_bytes - pre_group_file_bytes));
+
+    const auto end = std::chrono::steady_clock::now();
+    const std::chrono::duration<double> elapsed = end - start;
+    state.SetIterationTime(elapsed.count());
+
+    std::error_code ec;
+    std::filesystem::remove_all(out_path, ec);
+    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_start);
+  }
+
+  state.counters["streamlines"] = static_cast<double>(streamlines);
+  state.counters["atlases"] = static_cast<double>(g_parcellations.size());
+  state.counters["dilation_radius"] = static_cast<double>(dilation);
+  state.counters["max_rss_kb"] = max_rss_delta_kb;
+  state.counters["pre_group_file_bytes"] = max_pre_group_file_bytes;
+  state.counters["group_overhead_bytes"] = max_group_overhead_bytes;
+  state.counters["output_file_bytes"] = max_output_file_bytes;
+}
+
+static void ApplyParcellateArgs(benchmark::internal::Benchmark *bench) {
+  const auto counts = streamlines_for_benchmarks();
+  // dilation radius 0 (no dilation) only — add more rows for additional radii.
+  for (const auto count : counts) {
+    bench->Args({static_cast<int64_t>(count), 0});
+  }
+  bench->Iterations(1);
+}
+
+BENCHMARK(BM_Parcellate)
+    ->Apply(ApplyParcellateArgs)
+    ->UseManualTime()
+    ->Unit(benchmark::kMillisecond);
+
 } // namespace
 
 int main(int argc, char **argv) {
   bool show_help = false;
   std::string reference_trx;
+  std::string bench_data_dir;
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg = argv[i];
@@ -534,12 +632,18 @@ int main(int argc, char **argv) {
     } else if (arg == "--reference-trx" && i + 1 < argc) {
       reference_trx = argv[i + 1];
       ++i;
+    } else if (arg == "--bench-data-dir" && i + 1 < argc) {
+      bench_data_dir = argv[i + 1];
+      ++i;
     }
   }
 
   if (show_help) {
     std::cout << "\nCustom benchmark options:\n"
               << "  --reference-trx PATH   Path to reference TRX file (REQUIRED)\n"
+              << "  --bench-data-dir DIR   Directory containing parcellation NIfTI and label files\n"
+              << "                         (enables BM_Parcellate; expects the standard bench data\n"
+              << "                         filenames: native_space_seg-Glasser_dseg.nii.gz, etc.)\n"
               << "  --help-custom          Show this help message\n"
               << "\nFor standard benchmark options, use --help\n"
               << std::endl;
@@ -551,6 +655,38 @@ int main(int argc, char **argv) {
               << "Usage: " << argv[0] << " --reference-trx <path_to_trx_file> [benchmark_options]\n"
               << "Use --help-custom for more information\n" << std::endl;
     return 1;
+  }
+
+  // Resolve parcellation files from bench-data-dir if provided.
+  if (!bench_data_dir.empty()) {
+    const std::string sep =
+        (bench_data_dir.back() == '/' || bench_data_dir.back() == '\\') ? "" : "/";
+
+    const std::string glasser_nifti  = bench_data_dir + sep + "native_space_seg-Glasser_dseg.nii.gz";
+    const std::string glasser_labels = bench_data_dir + sep + "native_space_seg-Glasser_dseg.txt";
+    const std::string s4_nifti       = bench_data_dir + sep + "native_space_seg-4S456Parcels_dseg.nii.gz";
+    const std::string s4_labels      = bench_data_dir + sep + "native_space_seg-4S456Parcels_dseg.txt";
+
+    std::error_code ec;
+    if (std::filesystem::exists(glasser_nifti, ec) &&
+        std::filesystem::exists(glasser_labels, ec)) {
+      g_parcellations.push_back({glasser_nifti, glasser_labels, "Glasser"});
+      std::cerr << "[trx-itk-bench] Glasser parcellation found.\n";
+    } else {
+      std::cerr << "[trx-itk-bench] Warning: Glasser parcellation files not found in "
+                << bench_data_dir << "\n";
+    }
+    if (std::filesystem::exists(s4_nifti, ec) &&
+        std::filesystem::exists(s4_labels, ec)) {
+      g_parcellations.push_back({s4_nifti, s4_labels, "4S456"});
+      std::cerr << "[trx-itk-bench] 4S456 parcellation found.\n";
+    } else {
+      std::cerr << "[trx-itk-bench] Warning: 4S456 parcellation files not found in "
+                << bench_data_dir << "\n";
+    }
+    if (g_parcellations.empty()) {
+      std::cerr << "[trx-itk-bench] No parcellation files found; BM_Parcellate will be skipped.\n";
+    }
   }
 
   std::error_code ec;
@@ -590,6 +726,10 @@ int main(int argc, char **argv) {
       continue;
     }
     if (arg == "--reference-trx") {
+      ++i;
+      continue;
+    }
+    if (arg == "--bench-data-dir") {
       ++i;
       continue;
     }

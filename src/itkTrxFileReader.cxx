@@ -63,7 +63,7 @@ TrxFileReader::GetOutput() const
 DataObject::Pointer
 TrxFileReader::MakeOutput(DataObjectPointerArraySizeType itkNotUsed(idx))
 {
-  return TrxStreamlineData::New().GetPointer();
+  return TrxStreamlineData::New();
 }
 
 void
