@@ -357,16 +357,17 @@ RunPointToIndexParityAssertions()
   const auto lpsState = BuildLpsToVoxelState(image);
   const auto rasState = BuildRasToVoxelState(image);
 
+  // Keep tilted-FOV parity points away from exact half-integer boundaries
+  // to avoid fragile compiler-dependent ties after round-trip transforms.
   std::vector<ContinuousIndexType> cis = {
-    MakeContinuousIndex(-0.5, 3.25, 4.75),
-    MakeContinuousIndex(-0.5000001, 3.25, 4.75),
-    MakeContinuousIndex(-0.4999999, 3.25, 4.75),
+    MakeContinuousIndex(-0.5001, 3.25, 4.75),
+    MakeContinuousIndex(-0.4999, 3.25, 4.75),
     MakeContinuousIndex(2.5, 5.5, 7.5),
     MakeContinuousIndex(6.2, 8.8, 1.1),
     MakeContinuousIndex(16.49, 18.49, 22.49),
-    MakeContinuousIndex(16.5, 18.5, 22.5),
+    MakeContinuousIndex(16.499, 18.499, 22.499),
     MakeContinuousIndex(-1.49, 4.2, 6.9),
-    MakeContinuousIndex(7.5, -0.5, 10.5)
+    MakeContinuousIndex(7.5, -0.5001, 10.5)
   };
 
   for (const auto & ci : cis)
@@ -393,6 +394,61 @@ RunPointToIndexParityAssertions()
     if (itkInBuffered != rasInside || (itkInBuffered && rasIndex != itkIndex))
     {
       std::cerr << "FAIL: RAS-style mapping mismatch for CI=(" << ci[0] << ", " << ci[1] << ", " << ci[2] << ").\n";
+      return false;
+    }
+  }
+
+  // Separate tie-boundary check on axis-aligned geometry where -0.5 maps
+  // exactly and deterministically to validate ITK half-up behavior.
+  auto axisImage = ImageType::New();
+  ImageType::IndexType axisStart;
+  axisStart.Fill(0);
+  ImageType::SizeType axisSize;
+  axisSize.Fill(16);
+  axisImage->SetRegions(ImageType::RegionType(axisStart, axisSize));
+  axisImage->Allocate(true);
+  ImageType::SpacingType axisSpacing;
+  axisSpacing.Fill(1.0);
+  axisImage->SetSpacing(axisSpacing);
+  ImageType::PointType axisOrigin;
+  axisOrigin.Fill(0.0);
+  axisImage->SetOrigin(axisOrigin);
+  ImageType::DirectionType axisDir;
+  axisDir.SetIdentity();
+  axisImage->SetDirection(axisDir);
+  const auto axisLpsState = BuildLpsToVoxelState(axisImage);
+  const auto axisRasState = BuildRasToVoxelState(axisImage);
+
+  std::vector<ContinuousIndexType> tieCis = {
+    MakeContinuousIndex(-0.5, 3.25, 4.75),
+    MakeContinuousIndex(-0.5000001, 3.25, 4.75),
+    MakeContinuousIndex(-0.4999999, 3.25, 4.75),
+    MakeContinuousIndex(7.5, 8.5, 9.5)
+  };
+
+  for (const auto & ci : tieCis)
+  {
+    ImageType::PointType pLps;
+    axisImage->TransformContinuousIndexToPhysicalPoint(ci, pLps);
+
+    const ImageType::IndexType itkIndex = axisImage->TransformPhysicalPointToIndex(pLps);
+    const bool itkInBuffered = axisImage->GetBufferedRegion().IsInside(itkIndex);
+
+    ImageType::IndexType parIndex;
+    const bool parInside = PhysicalPointToIndexLikeParcellation(axisLpsState, pLps, parIndex);
+    if (itkInBuffered != parInside || (itkInBuffered && parIndex != itkIndex))
+    {
+      std::cerr << "FAIL: axis parcellation-style mismatch for CI=(" << ci[0] << ", " << ci[1] << ", " << ci[2]
+                << ").\n";
+      return false;
+    }
+
+    std::array<double, 3> pRas = { -pLps[0], -pLps[1], pLps[2] };
+    ImageType::IndexType rasIndex;
+    const bool rasInside = RasPointToIndexLikeGroupTdi(axisRasState, pRas, rasIndex);
+    if (itkInBuffered != rasInside || (itkInBuffered && rasIndex != itkIndex))
+    {
+      std::cerr << "FAIL: axis RAS-style mismatch for CI=(" << ci[0] << ", " << ci[1] << ", " << ci[2] << ").\n";
       return false;
     }
   }
