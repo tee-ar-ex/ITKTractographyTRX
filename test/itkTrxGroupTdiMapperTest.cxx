@@ -21,6 +21,7 @@
 #include "itkNiftiImageIO.h"
 #include "itkTrxGroupTdiMapper.h"
 #include "itkTrxStreamWriter.h"
+#include "itkContinuousIndex.h"
 
 #include "itksys/SystemTools.hxx"
 
@@ -307,6 +308,8 @@ RasPointToIndexLikeGroupTdi(const RasToVoxelState & state,
 bool
 RunPointToIndexParityAssertions()
 {
+  using ContinuousIndexType = itk::ContinuousIndex<double, 3>;
+
   ImageType::IndexType start;
   start[0] = -4;
   start[1] = 3;
@@ -355,16 +358,16 @@ RunPointToIndexParityAssertions()
   const auto lpsState = BuildLpsToVoxelState(image);
   const auto rasState = BuildRasToVoxelState(image);
 
-  std::vector<ImageType::ContinuousIndexType> cis = {
-    ImageType::ContinuousIndexType({ { -0.5, 3.25, 4.75 } }),
-    ImageType::ContinuousIndexType({ { -0.5000001, 3.25, 4.75 } }),
-    ImageType::ContinuousIndexType({ { -0.4999999, 3.25, 4.75 } }),
-    ImageType::ContinuousIndexType({ { 2.5, 5.5, 7.5 } }),
-    ImageType::ContinuousIndexType({ { 6.2, 8.8, 1.1 } }),
-    ImageType::ContinuousIndexType({ { 16.49, 18.49, 22.49 } }),
-    ImageType::ContinuousIndexType({ { 16.5, 18.5, 22.5 } }),
-    ImageType::ContinuousIndexType({ { -1.49, 4.2, 6.9 } }),
-    ImageType::ContinuousIndexType({ { 7.5, -0.5, 10.5 } })
+  std::vector<ContinuousIndexType> cis = {
+    ContinuousIndexType({ { -0.5, 3.25, 4.75 } }),
+    ContinuousIndexType({ { -0.5000001, 3.25, 4.75 } }),
+    ContinuousIndexType({ { -0.4999999, 3.25, 4.75 } }),
+    ContinuousIndexType({ { 2.5, 5.5, 7.5 } }),
+    ContinuousIndexType({ { 6.2, 8.8, 1.1 } }),
+    ContinuousIndexType({ { 16.49, 18.49, 22.49 } }),
+    ContinuousIndexType({ { 16.5, 18.5, 22.5 } }),
+    ContinuousIndexType({ { -1.49, 4.2, 6.9 } }),
+    ContinuousIndexType({ { 7.5, -0.5, 10.5 } })
   };
 
   for (const auto & ci : cis)
