@@ -15,4 +15,5 @@ jobs:
         -DITKGroup_Core:BOOL=ON
         -DITKGroup_Transform:BOOL=ON
         -DModule_ITKEigen3:BOOL=ON
+        -DModule_ITKMathematicalMorphology:BOOL=ON
       cmake-options: ""
