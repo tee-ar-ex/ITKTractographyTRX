@@ -92,6 +92,8 @@ public:
   GetDpgFieldNames(const std::string & groupName) const = 0;
   virtual std::vector<float>
   GetDpgField(const std::string & groupName, const std::string & fieldName) const = 0;
+  virtual trx::ConnectivityMatrixResult
+  ComputeGroupConnectivity(const std::string & dpsFieldName) const = 0;
 };
 
 namespace
@@ -440,6 +442,16 @@ public:
       result[static_cast<size_t>(i)] = static_cast<float>(mat.data()[i]);
     }
     return result;
+  }
+
+  trx::ConnectivityMatrixResult
+  ComputeGroupConnectivity(const std::string & dpsFieldName) const override
+  {
+    if (dpsFieldName.empty())
+    {
+      return m_Trx->compute_group_connectivity(trx::ConnectivityMeasure::StreamlineCount, "");
+    }
+    return m_Trx->compute_group_connectivity(trx::ConnectivityMeasure::DpsSum, dpsFieldName);
   }
 
 private:
@@ -1573,6 +1585,44 @@ TrxStreamlineData::GetDpvField(const std::string & name) const
     return {};
   }
   return m_TrxHandle->GetDpvField(name);
+}
+
+TrxStreamlineData::GroupConnectivityResult
+TrxStreamlineData::ComputeGroupConnectivity(const std::string & dpsFieldName) const
+{
+  if (!m_TrxHandle)
+  {
+    itkExceptionMacro("Connectivity computation requires a TRX backing handle.");
+  }
+
+  const auto native = m_TrxHandle->ComputeGroupConnectivity(dpsFieldName);
+  GroupConnectivityResult out;
+  out.groupNames = native.group_names;
+  const size_t G = out.groupNames.size();
+  out.matrix.set_size(static_cast<unsigned int>(G), static_cast<unsigned int>(G));
+  out.streamlineCounts.set_size(static_cast<unsigned int>(G), static_cast<unsigned int>(G));
+  out.matrix.fill(0.0);
+  out.streamlineCounts.fill(0.0);
+
+  size_t packedIndex = 0;
+  for (size_t i = 0; i < G; ++i)
+  {
+    for (size_t j = i; j < G; ++j)
+    {
+      const double value = native.value_upper[packedIndex];
+      const double count = static_cast<double>(native.streamline_count_upper[packedIndex]);
+      out.matrix(static_cast<unsigned int>(i), static_cast<unsigned int>(j)) = value;
+      out.streamlineCounts(static_cast<unsigned int>(i), static_cast<unsigned int>(j)) = count;
+      if (i != j)
+      {
+        out.matrix(static_cast<unsigned int>(j), static_cast<unsigned int>(i)) = value;
+        out.streamlineCounts(static_cast<unsigned int>(j), static_cast<unsigned int>(i)) = count;
+      }
+      ++packedIndex;
+    }
+  }
+
+  return out;
 }
 
 void

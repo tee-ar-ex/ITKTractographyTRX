@@ -361,6 +361,26 @@ public:
   std::vector<float>
   GetDpvField(const std::string & name) const;
 
+  /** Symmetric connectivity matrix over TRX groups. */
+  struct GroupConnectivityResult
+  {
+    std::vector<std::string> groupNames;
+    vnl_matrix<double>       matrix;
+    vnl_matrix<double>       streamlineCounts;
+  };
+
+  /**
+   * Compute group connectivity as either raw streamline counts or weighted sums.
+   *
+   * If dpsFieldName is empty, matrix entries are raw streamline counts.
+   * If dpsFieldName is provided, matrix entries are sums of that 1D DPS field
+   * over streamlines belonging to each group pair.
+   *
+   * Diagonal entries represent within-group totals.
+   */
+  GroupConnectivityResult
+  ComputeGroupConnectivity(const std::string & dpsFieldName = "") const;
+
 protected:
   TrxStreamlineData() = default;
   ~TrxStreamlineData() override = default;

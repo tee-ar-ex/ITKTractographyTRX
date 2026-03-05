@@ -12,6 +12,8 @@ itk_module(
     ITKCommon
     ITKTransform
     ITKEigen3
+    ITKIONIFTI
+    ITKMathematicalMorphology
   TEST_DEPENDS
     ITKTestKernel
   DESCRIPTION "${DOCUMENTATION}"

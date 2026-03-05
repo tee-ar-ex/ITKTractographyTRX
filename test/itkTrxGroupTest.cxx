@@ -786,6 +786,118 @@ TestGroupRoundTrip(const std::string & basePath)
   return true;
 }
 
+// -----------------------------------------------------------------------
+// Test 10: Group connectivity matrix (count and DPS-weighted)
+// -----------------------------------------------------------------------
+bool
+TestGroupConnectivity(const std::string & basePath)
+{
+  const std::string outputPath = basePath + "_conn.trx";
+  CleanupPath(outputPath);
+
+  {
+    auto writer = itk::TrxStreamWriter::New();
+    writer->SetFileName(outputPath);
+    writer->SetUseCompression(true);
+    writer->SetVoxelToRasMatrix(MakeIdentityRas());
+    writer->SetDimensions(MakeDims());
+    writer->RegisterDpsField("weight", "float32");
+
+    // 4 streamlines, overlapping memberships:
+    // A: {0,1}, B: {1,2}, C: {2,3}
+    writer->PushStreamline(MakeStreamline(0, 2), { { "weight", 1.0 } }, {}, { "A" });
+    writer->PushStreamline(MakeStreamline(10, 2), { { "weight", 2.0 } }, {}, { "A", "B" });
+    writer->PushStreamline(MakeStreamline(20, 2), { { "weight", 3.0 } }, {}, { "B", "C" });
+    writer->PushStreamline(MakeStreamline(30, 2), { { "weight", 4.0 } }, {}, { "C" });
+    writer->Finalize();
+  }
+
+  auto reader = itk::TrxFileReader::New();
+  reader->SetFileName(outputPath);
+  reader->Update();
+  auto data = reader->GetOutput();
+  if (!data)
+  {
+    std::cerr << "[Connectivity] Failed to read output.\n";
+    return false;
+  }
+
+  const auto counts = data->ComputeGroupConnectivity("");
+  if (counts.groupNames.size() != 3)
+  {
+    std::cerr << "[Connectivity] Expected 3 groups, got " << counts.groupNames.size() << "\n";
+    return false;
+  }
+  if (counts.matrix.rows() != 3 || counts.matrix.cols() != 3)
+  {
+    std::cerr << "[Connectivity] Count matrix shape mismatch.\n";
+    return false;
+  }
+
+  auto idxOf = [&](const std::string & name) -> int {
+    for (size_t i = 0; i < counts.groupNames.size(); ++i)
+    {
+      if (counts.groupNames[i] == name)
+      {
+        return static_cast<int>(i);
+      }
+    }
+    return -1;
+  };
+  const int ia = idxOf("A");
+  const int ib = idxOf("B");
+  const int ic = idxOf("C");
+  if (ia < 0 || ib < 0 || ic < 0)
+  {
+    std::cerr << "[Connectivity] Missing expected groups A/B/C.\n";
+    return false;
+  }
+
+  auto expectNear = [](double got, double expected, const char * what) -> bool {
+    if (std::abs(got - expected) > 1e-6)
+    {
+      std::cerr << "[Connectivity] " << what << " mismatch: got " << got << " expected " << expected << "\n";
+      return false;
+    }
+    return true;
+  };
+
+  // Count-mode expectations
+  if (!expectNear(counts.matrix(ia, ia), 2.0, "count A,A"))
+    return false;
+  if (!expectNear(counts.matrix(ia, ib), 1.0, "count A,B"))
+    return false;
+  if (!expectNear(counts.matrix(ia, ic), 0.0, "count A,C"))
+    return false;
+  if (!expectNear(counts.matrix(ib, ib), 2.0, "count B,B"))
+    return false;
+  if (!expectNear(counts.matrix(ib, ic), 1.0, "count B,C"))
+    return false;
+  if (!expectNear(counts.matrix(ic, ic), 2.0, "count C,C"))
+    return false;
+  if (!expectNear(counts.matrix(ib, ia), counts.matrix(ia, ib), "count symmetry AB"))
+    return false;
+
+  // Weighted expectations using DPS "weight"
+  const auto weighted = data->ComputeGroupConnectivity("weight");
+  if (!expectNear(weighted.matrix(ia, ia), 3.0, "weight A,A"))
+    return false;
+  if (!expectNear(weighted.matrix(ia, ib), 2.0, "weight A,B"))
+    return false;
+  if (!expectNear(weighted.matrix(ia, ic), 0.0, "weight A,C"))
+    return false;
+  if (!expectNear(weighted.matrix(ib, ib), 5.0, "weight B,B"))
+    return false;
+  if (!expectNear(weighted.matrix(ib, ic), 3.0, "weight B,C"))
+    return false;
+  if (!expectNear(weighted.matrix(ic, ic), 7.0, "weight C,C"))
+    return false;
+  if (!expectNear(weighted.matrix(ic, ib), weighted.matrix(ib, ic), "weight symmetry BC"))
+    return false;
+
+  return true;
+}
+
 } // namespace
 
 int
@@ -855,6 +967,12 @@ itkTrxGroupTest(int argc, char * argv[])
 
   std::cerr << "[GroupTest] TestGroupRoundTrip" << std::endl;
   if (!TestGroupRoundTrip(basePath))
+  {
+    return EXIT_FAILURE;
+  }
+
+  std::cerr << "[GroupTest] TestGroupConnectivity" << std::endl;
+  if (!TestGroupConnectivity(basePath))
   {
     return EXIT_FAILURE;
   }
