@@ -309,6 +309,13 @@ bool
 RunPointToIndexParityAssertions()
 {
   using ContinuousIndexType = itk::ContinuousIndex<double, 3>;
+  auto MakeContinuousIndex = [](double x, double y, double z) {
+    ContinuousIndexType ci;
+    ci[0] = x;
+    ci[1] = y;
+    ci[2] = z;
+    return ci;
+  };
 
   ImageType::IndexType start;
   start[0] = -4;
@@ -359,15 +366,15 @@ RunPointToIndexParityAssertions()
   const auto rasState = BuildRasToVoxelState(image);
 
   std::vector<ContinuousIndexType> cis = {
-    ContinuousIndexType({ { -0.5, 3.25, 4.75 } }),
-    ContinuousIndexType({ { -0.5000001, 3.25, 4.75 } }),
-    ContinuousIndexType({ { -0.4999999, 3.25, 4.75 } }),
-    ContinuousIndexType({ { 2.5, 5.5, 7.5 } }),
-    ContinuousIndexType({ { 6.2, 8.8, 1.1 } }),
-    ContinuousIndexType({ { 16.49, 18.49, 22.49 } }),
-    ContinuousIndexType({ { 16.5, 18.5, 22.5 } }),
-    ContinuousIndexType({ { -1.49, 4.2, 6.9 } }),
-    ContinuousIndexType({ { 7.5, -0.5, 10.5 } })
+    MakeContinuousIndex(-0.5, 3.25, 4.75),
+    MakeContinuousIndex(-0.5000001, 3.25, 4.75),
+    MakeContinuousIndex(-0.4999999, 3.25, 4.75),
+    MakeContinuousIndex(2.5, 5.5, 7.5),
+    MakeContinuousIndex(6.2, 8.8, 1.1),
+    MakeContinuousIndex(16.49, 18.49, 22.49),
+    MakeContinuousIndex(16.5, 18.5, 22.5),
+    MakeContinuousIndex(-1.49, 4.2, 6.9),
+    MakeContinuousIndex(7.5, -0.5, 10.5)
   };
 
   for (const auto & ci : cis)
