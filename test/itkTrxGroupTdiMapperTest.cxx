@@ -31,6 +31,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <array>
 
 namespace
 {
@@ -169,6 +170,232 @@ inline size_t
 Flatten(size_t i, size_t j, size_t k, size_t nx, size_t ny)
 {
   return i + nx * (j + ny * k);
+}
+
+inline int
+RoundHalfIntegerUpToInt(double value)
+{
+  return static_cast<int>(std::floor(value + 0.5));
+}
+
+struct LpsToVoxelState
+{
+  std::array<double, 9> M{};
+  std::array<double, 3> origin{};
+  itk::Index<3>         bufferStart{};
+  itk::Size<3>          bufferSize{};
+};
+
+struct RasToVoxelState
+{
+  std::array<double, 9> M{};
+  std::array<double, 3> b{};
+  itk::Index<3>         bufferStart{};
+  itk::Size<3>          bufferSize{};
+};
+
+LpsToVoxelState
+BuildLpsToVoxelState(const ImageType * image)
+{
+  LpsToVoxelState state;
+  const auto buffered = image->GetBufferedRegion();
+  state.bufferStart = buffered.GetIndex();
+  state.bufferSize = buffered.GetSize();
+  const auto & invDir = image->GetInverseDirection();
+  const auto & spacing = image->GetSpacing();
+  const auto & origin = image->GetOrigin();
+  for (int r = 0; r < 3; ++r)
+  {
+    for (int c = 0; c < 3; ++c)
+    {
+      state.M[static_cast<size_t>(r * 3 + c)] = invDir(r, c) / spacing[r];
+    }
+    state.origin[static_cast<size_t>(r)] = origin[r];
+  }
+  return state;
+}
+
+RasToVoxelState
+BuildRasToVoxelState(const ImageType * image)
+{
+  RasToVoxelState state;
+  const auto buffered = image->GetBufferedRegion();
+  state.bufferStart = buffered.GetIndex();
+  state.bufferSize = buffered.GetSize();
+  const auto & invDir = image->GetInverseDirection();
+  const auto & spacing = image->GetSpacing();
+  const auto & origin = image->GetOrigin();
+
+  const double lpsToVoxel[9] = { invDir(0, 0) / spacing[0],
+                                 invDir(0, 1) / spacing[0],
+                                 invDir(0, 2) / spacing[0],
+                                 invDir(1, 0) / spacing[1],
+                                 invDir(1, 1) / spacing[1],
+                                 invDir(1, 2) / spacing[1],
+                                 invDir(2, 0) / spacing[2],
+                                 invDir(2, 1) / spacing[2],
+                                 invDir(2, 2) / spacing[2] };
+  const double rasToLps[9] = { -1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0 };
+
+  for (int r = 0; r < 3; ++r)
+  {
+    for (int c = 0; c < 3; ++c)
+    {
+      double sum = 0.0;
+      for (int k = 0; k < 3; ++k)
+      {
+        sum += lpsToVoxel[r * 3 + k] * rasToLps[k * 3 + c];
+      }
+      state.M[static_cast<size_t>(r * 3 + c)] = sum;
+    }
+    state.b[static_cast<size_t>(r)] = -(lpsToVoxel[r * 3 + 0] * origin[0] + lpsToVoxel[r * 3 + 1] * origin[1] +
+                                        lpsToVoxel[r * 3 + 2] * origin[2]);
+  }
+  return state;
+}
+
+bool
+PhysicalPointToIndexLikeParcellation(const LpsToVoxelState & state,
+                                     const ImageType::PointType & pointLps,
+                                     ImageType::IndexType & index)
+{
+  const double dx = pointLps[0] - state.origin[0];
+  const double dy = pointLps[1] - state.origin[1];
+  const double dz = pointLps[2] - state.origin[2];
+
+  const int i = RoundHalfIntegerUpToInt(state.M[0] * dx + state.M[1] * dy + state.M[2] * dz);
+  const int j = RoundHalfIntegerUpToInt(state.M[3] * dx + state.M[4] * dy + state.M[5] * dz);
+  const int k = RoundHalfIntegerUpToInt(state.M[6] * dx + state.M[7] * dy + state.M[8] * dz);
+
+  index[0] = i;
+  index[1] = j;
+  index[2] = k;
+  const int startI = state.bufferStart[0];
+  const int startJ = state.bufferStart[1];
+  const int startK = state.bufferStart[2];
+  const int endI = startI + static_cast<int>(state.bufferSize[0]);
+  const int endJ = startJ + static_cast<int>(state.bufferSize[1]);
+  const int endK = startK + static_cast<int>(state.bufferSize[2]);
+  return (i >= startI && i < endI && j >= startJ && j < endJ && k >= startK && k < endK);
+}
+
+bool
+RasPointToIndexLikeGroupTdi(const RasToVoxelState & state,
+                            const std::array<double, 3> & pointRas,
+                            ImageType::IndexType & index)
+{
+  const double fi = state.M[0] * pointRas[0] + state.M[1] * pointRas[1] + state.M[2] * pointRas[2] + state.b[0];
+  const double fj = state.M[3] * pointRas[0] + state.M[4] * pointRas[1] + state.M[5] * pointRas[2] + state.b[1];
+  const double fk = state.M[6] * pointRas[0] + state.M[7] * pointRas[1] + state.M[8] * pointRas[2] + state.b[2];
+
+  const int i = RoundHalfIntegerUpToInt(fi);
+  const int j = RoundHalfIntegerUpToInt(fj);
+  const int k = RoundHalfIntegerUpToInt(fk);
+
+  index[0] = i;
+  index[1] = j;
+  index[2] = k;
+  const int startI = state.bufferStart[0];
+  const int startJ = state.bufferStart[1];
+  const int startK = state.bufferStart[2];
+  const int endI = startI + static_cast<int>(state.bufferSize[0]);
+  const int endJ = startJ + static_cast<int>(state.bufferSize[1]);
+  const int endK = startK + static_cast<int>(state.bufferSize[2]);
+  return (i >= startI && i < endI && j >= startJ && j < endJ && k >= startK && k < endK);
+}
+
+bool
+RunPointToIndexParityAssertions()
+{
+  ImageType::IndexType start;
+  start[0] = -4;
+  start[1] = 3;
+  start[2] = -2;
+  ImageType::SizeType size;
+  size[0] = 17;
+  size[1] = 19;
+  size[2] = 23;
+  ImageType::RegionType region(start, size);
+
+  auto image = ImageType::New();
+  image->SetRegions(region);
+  image->Allocate(true);
+
+  ImageType::SpacingType spacing;
+  spacing[0] = 1.3;
+  spacing[1] = 0.9;
+  spacing[2] = 2.1;
+  image->SetSpacing(spacing);
+
+  ImageType::PointType origin;
+  origin[0] = -24.0;
+  origin[1] = 7.5;
+  origin[2] = 11.0;
+  image->SetOrigin(origin);
+
+  const double ax = 0.35;
+  const double ay = -0.40;
+  const double az = 0.25;
+  const double cx = std::cos(ax), sx = std::sin(ax);
+  const double cy = std::cos(ay), sy = std::sin(ay);
+  const double cz = std::cos(az), sz = std::sin(az);
+
+  ImageType::DirectionType dir;
+  dir(0, 0) = cz * cy;
+  dir(0, 1) = cz * sy * sx - sz * cx;
+  dir(0, 2) = cz * sy * cx + sz * sx;
+  dir(1, 0) = sz * cy;
+  dir(1, 1) = sz * sy * sx + cz * cx;
+  dir(1, 2) = sz * sy * cx - cz * sx;
+  dir(2, 0) = -sy;
+  dir(2, 1) = cy * sx;
+  dir(2, 2) = cy * cx;
+  image->SetDirection(dir);
+
+  const auto lpsState = BuildLpsToVoxelState(image);
+  const auto rasState = BuildRasToVoxelState(image);
+
+  std::vector<ImageType::ContinuousIndexType> cis = {
+    ImageType::ContinuousIndexType({ { -0.5, 3.25, 4.75 } }),
+    ImageType::ContinuousIndexType({ { -0.5000001, 3.25, 4.75 } }),
+    ImageType::ContinuousIndexType({ { -0.4999999, 3.25, 4.75 } }),
+    ImageType::ContinuousIndexType({ { 2.5, 5.5, 7.5 } }),
+    ImageType::ContinuousIndexType({ { 6.2, 8.8, 1.1 } }),
+    ImageType::ContinuousIndexType({ { 16.49, 18.49, 22.49 } }),
+    ImageType::ContinuousIndexType({ { 16.5, 18.5, 22.5 } }),
+    ImageType::ContinuousIndexType({ { -1.49, 4.2, 6.9 } }),
+    ImageType::ContinuousIndexType({ { 7.5, -0.5, 10.5 } })
+  };
+
+  for (const auto & ci : cis)
+  {
+    ImageType::PointType pLps;
+    image->TransformContinuousIndexToPhysicalPoint(ci, pLps);
+
+    ImageType::IndexType itkIndex;
+    const bool itkInside = image->TransformPhysicalPointToIndex(pLps, itkIndex);
+
+    ImageType::IndexType parIndex;
+    const bool parInside = PhysicalPointToIndexLikeParcellation(lpsState, pLps, parIndex);
+    const bool itkInBuffered = itkInside && image->GetBufferedRegion().IsInside(itkIndex);
+    if (itkInBuffered != parInside || (itkInBuffered && parIndex != itkIndex))
+    {
+      std::cerr << "FAIL: parcellation-style mapping mismatch for CI=(" << ci[0] << ", " << ci[1] << ", " << ci[2]
+                << ").\n";
+      return false;
+    }
+
+    std::array<double, 3> pRas = { -pLps[0], -pLps[1], pLps[2] };
+    ImageType::IndexType rasIndex;
+    const bool rasInside = RasPointToIndexLikeGroupTdi(rasState, pRas, rasIndex);
+    if (itkInBuffered != rasInside || (itkInBuffered && rasIndex != itkIndex))
+    {
+      std::cerr << "FAIL: RAS-style mapping mismatch for CI=(" << ci[0] << ", " << ci[1] << ", " << ci[2] << ").\n";
+      return false;
+    }
+  }
+
+  return true;
 }
 
 bool
@@ -445,6 +672,10 @@ itkTrxGroupTdiMapperTest(int argc, char * argv[])
     return EXIT_FAILURE;
   }
   if (!RunEmptySelectedIdsAssertions(trxPath, referencePath))
+  {
+    return EXIT_FAILURE;
+  }
+  if (!RunPointToIndexParityAssertions())
   {
     return EXIT_FAILURE;
   }

@@ -38,18 +38,27 @@ namespace
 {
 using RefImageType = TrxGroupTdiMapper::OutputImageType;
 
+inline int
+RoundHalfIntegerUpToInt(double value)
+{
+  return static_cast<int>(std::floor(value + 0.5));
+}
+
 struct RasToVoxelState
 {
   std::array<double, 9> M{};
   std::array<double, 3> b{};
-  itk::Size<3>          dims{};
+  itk::Index<3>         bufferStart{};
+  itk::Size<3>          bufferSize{};
 };
 
 RasToVoxelState
 BuildRasToVoxelState(const RefImageType * image)
 {
   RasToVoxelState state;
-  state.dims = image->GetLargestPossibleRegion().GetSize();
+  const auto buffered = image->GetBufferedRegion();
+  state.bufferStart = buffered.GetIndex();
+  state.bufferSize = buffered.GetSize();
 
   const auto & invDir = image->GetInverseDirection();
   const auto & spacing = image->GetSpacing();
@@ -92,12 +101,18 @@ RasPointToIndex(const RasToVoxelState & state, double rx, double ry, double rz, 
   const double fj = state.M[3] * rx + state.M[4] * ry + state.M[5] * rz + state.b[1];
   const double fk = state.M[6] * rx + state.M[7] * ry + state.M[8] * rz + state.b[2];
 
-  i = static_cast<int>(std::round(fi));
-  j = static_cast<int>(std::round(fj));
-  k = static_cast<int>(std::round(fk));
+  i = RoundHalfIntegerUpToInt(fi);
+  j = RoundHalfIntegerUpToInt(fj);
+  k = RoundHalfIntegerUpToInt(fk);
 
-  return (i >= 0 && i < static_cast<int>(state.dims[0]) && j >= 0 && j < static_cast<int>(state.dims[1]) && k >= 0 &&
-          k < static_cast<int>(state.dims[2]));
+  const int startI = state.bufferStart[0];
+  const int startJ = state.bufferStart[1];
+  const int startK = state.bufferStart[2];
+  const int endI = startI + static_cast<int>(state.bufferSize[0]);
+  const int endJ = startJ + static_cast<int>(state.bufferSize[1]);
+  const int endK = startK + static_cast<int>(state.bufferSize[2]);
+
+  return (i >= startI && i < endI && j >= startJ && j < endJ && k >= startK && k < endK);
 }
 } // namespace
 
@@ -239,10 +254,12 @@ TrxGroupTdiMapper::Update()
   m_Output->SetRegions(ref->GetLargestPossibleRegion());
   m_Output->Allocate(true);
 
-  const auto dims = ref->GetLargestPossibleRegion().GetSize();
-  const size_t nx = dims[0];
-  const size_t ny = dims[1];
-  const size_t nz = dims[2];
+  const auto outRegion = m_Output->GetBufferedRegion();
+  const auto outStart = outRegion.GetIndex();
+  const auto outSize = outRegion.GetSize();
+  const size_t nx = outSize[0];
+  const size_t ny = outSize[1];
+  const size_t nz = outSize[2];
   const size_t nVoxels = nx * ny * nz;
   auto *        outBuffer = m_Output->GetBufferPointer();
   if (!outBuffer)
@@ -385,7 +402,10 @@ TrxGroupTdiMapper::Update()
         {
           continue;
         }
-        const size_t flat = static_cast<size_t>(i) + nx * (static_cast<size_t>(j) + ny * static_cast<size_t>(k));
+        const size_t localI = static_cast<size_t>(i - outStart[0]);
+        const size_t localJ = static_cast<size_t>(j - outStart[1]);
+        const size_t localK = static_cast<size_t>(k - outStart[2]);
+        const size_t flat = localI + nx * (localJ + ny * localK);
         if (!visited.insert(flat).second)
         {
           continue;
