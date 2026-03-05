@@ -111,6 +111,11 @@ TestGroupNamesAndIndices(const std::string & basePath)
 {
   const std::string outputPath = basePath + "_names.trx";
   CleanupPath(outputPath);
+  struct Guard
+  {
+    std::string path;
+    ~Guard() { CleanupPath(path); }
+  } guard{ outputPath };
 
   auto writer = itk::TrxStreamWriter::New();
   writer->SetFileName(outputPath);
@@ -214,6 +219,15 @@ TestGroupDpgField(const std::string & basePath)
   const std::string outputPath = basePath + "_dpg.trx";
   CleanupPath(writePath);
   CleanupPath(outputPath);
+  struct Guard
+  {
+    std::vector<std::string> paths;
+    ~Guard()
+    {
+      for (const auto & p : paths)
+        CleanupPath(p);
+    }
+  } guard{ { writePath, outputPath } };
 
   // 1. Write TRX with groups via TrxStreamWriter
   {
@@ -293,15 +307,29 @@ TestGroupDpgField(const std::string & basePath)
 bool
 TestGroupColorFromDpg(const std::string & basePath)
 {
-  const std::string writePath = basePath + "_color_base.trx";
+  // Write as an uncompressed directory so we can inject a multi-component
+  // DPG color file directly into the known directory layout without relying
+  // on trx-cpp internal members.
+  const std::string writePath = basePath + "_color_base"; // directory TRX (no .trx)
   const std::string outputPath = basePath + "_color.trx";
   CleanupPath(writePath);
   CleanupPath(outputPath);
 
+  struct Guard
+  {
+    std::vector<std::string> paths;
+    ~Guard()
+    {
+      for (const auto & p : paths)
+        CleanupPath(p);
+    }
+  } guard;
+  guard.paths = { writePath, outputPath };
+
   {
     auto writer = itk::TrxStreamWriter::New();
     writer->SetFileName(writePath);
-    writer->SetUseCompression(true);
+    writer->SetUseCompression(false); // write as directory
     writer->SetVoxelToRasMatrix(MakeIdentityRas());
     writer->SetDimensions(MakeDims());
     writer->PushStreamline(MakeStreamline(0, 2), {}, {}, { "GroupA" });
@@ -310,16 +338,9 @@ TestGroupColorFromDpg(const std::string & basePath)
 
   const std::array<float, 3> expectedColor = { 0.1f, 0.2f, 0.3f };
   {
-    auto trx = trx::load<float>(writePath);
-    if (!trx)
-    {
-      std::cerr << "[ColorFromDpg] Failed to load with trx::load.\n";
-      return false;
-    }
-    // add_dpg_from_vector only supports single-dim filenames (name.dtype);
-    // multi-component DPG requires writing the file directly as name.3.float32.
-    const std::string tmpDir = trx->_uncompressed_folder_handle;
-    const std::string dpgGroupDir = tmpDir + "/dpg/GroupA";
+    // Inject multi-component DPG color field directly into the directory layout.
+    // The TRX directory spec stores DPG under dpg/{group_name}/{field}.{ncols}.{dtype}
+    const std::string dpgGroupDir = writePath + "/dpg/GroupA";
     itksys::SystemTools::MakeDirectory(dpgGroupDir);
     const std::string colorFile = dpgGroupDir + "/color.3.float32";
     std::ofstream ofs(colorFile, std::ios::binary);
@@ -328,10 +349,16 @@ TestGroupColorFromDpg(const std::string & basePath)
       std::cerr << "[ColorFromDpg] Failed to open color file for writing.\n";
       return false;
     }
-    ofs.write(reinterpret_cast<const char *>(&expectedColor[0]), sizeof(float));
-    ofs.write(reinterpret_cast<const char *>(&expectedColor[1]), sizeof(float));
-    ofs.write(reinterpret_cast<const char *>(&expectedColor[2]), sizeof(float));
+    ofs.write(reinterpret_cast<const char *>(expectedColor.data()), 3 * sizeof(float));
     ofs.close();
+
+    // Re-save as a compressed archive.
+    auto trx = trx::load<float>(writePath);
+    if (!trx)
+    {
+      std::cerr << "[ColorFromDpg] Failed to load directory TRX.\n";
+      return false;
+    }
     trx->save(outputPath);
   }
 
@@ -374,6 +401,11 @@ TestGroupAutoColor(const std::string & basePath)
 {
   const std::string outputPath = basePath + "_autocolor.trx";
   CleanupPath(outputPath);
+  struct Guard
+  {
+    std::string path;
+    ~Guard() { CleanupPath(path); }
+  } guard{ outputPath };
 
   auto writer = itk::TrxStreamWriter::New();
   writer->SetFileName(outputPath);
@@ -463,6 +495,11 @@ TestGroupGetStreamlines(const std::string & basePath)
 {
   const std::string outputPath = basePath + "_getstreamlines.trx";
   CleanupPath(outputPath);
+  struct Guard
+  {
+    std::string path;
+    ~Guard() { CleanupPath(path); }
+  } guard{ outputPath };
 
   auto writer = itk::TrxStreamWriter::New();
   writer->SetFileName(outputPath);
@@ -510,136 +547,7 @@ TestGroupGetStreamlines(const std::string & basePath)
 }
 
 // -----------------------------------------------------------------------
-// Test 7: DPS field round-trip
-// -----------------------------------------------------------------------
-bool
-TestDpsFields(const std::string & basePath)
-{
-  const std::string outputPath = basePath + "_dps.trx";
-  CleanupPath(outputPath);
-
-  const std::vector<double> faValues = { 0.1, 0.5, 0.9 };
-
-  auto writer = itk::TrxStreamWriter::New();
-  writer->SetFileName(outputPath);
-  writer->SetUseCompression(true);
-  writer->SetVoxelToRasMatrix(MakeIdentityRas());
-  writer->SetDimensions(MakeDims());
-  writer->RegisterDpsField("FA", "float32");
-  for (size_t i = 0; i < faValues.size(); ++i)
-  {
-    writer->PushStreamline(MakeStreamline(static_cast<int>(i) * 10, 2), { { "FA", faValues[i] } });
-  }
-  writer->Finalize();
-
-  auto reader = itk::TrxFileReader::New();
-  reader->SetFileName(outputPath);
-  reader->Update();
-  auto data = reader->GetOutput();
-  if (!data)
-  {
-    std::cerr << "[DpsFields] Failed to read output.\n";
-    return false;
-  }
-
-  auto fieldNames = data->GetDpsFieldNames();
-  if (std::find(fieldNames.begin(), fieldNames.end(), "FA") == fieldNames.end())
-  {
-    std::cerr << "[DpsFields] 'FA' not found in DPS field names.\n";
-    return false;
-  }
-
-  auto fa = data->GetDpsField("FA");
-  if (fa.size() != faValues.size())
-  {
-    std::cerr << "[DpsFields] FA field size mismatch: " << fa.size() << " expected " << faValues.size() << "\n";
-    return false;
-  }
-
-  for (size_t i = 0; i < faValues.size(); ++i)
-  {
-    if (std::abs(fa[i] - static_cast<float>(faValues[i])) > 1e-5f)
-    {
-      std::cerr << "[DpsFields] FA[" << i << "] mismatch: " << fa[i] << " expected " << faValues[i] << "\n";
-      return false;
-    }
-  }
-
-  return true;
-}
-
-// -----------------------------------------------------------------------
-// Test 8: DPV field round-trip
-// -----------------------------------------------------------------------
-bool
-TestDpvFields(const std::string & basePath)
-{
-  const std::string outputPath = basePath + "_dpv.trx";
-  CleanupPath(outputPath);
-
-  // Two streamlines: 2 and 3 points → 5 vertices total
-  const std::vector<double> sig0 = { 0.1, 0.2 };
-  const std::vector<double> sig1 = { 0.3, 0.4, 0.5 };
-
-  auto writer = itk::TrxStreamWriter::New();
-  writer->SetFileName(outputPath);
-  writer->SetUseCompression(true);
-  writer->SetVoxelToRasMatrix(MakeIdentityRas());
-  writer->SetDimensions(MakeDims());
-  writer->RegisterDpvField("signal", "float32");
-  writer->PushStreamline(MakeStreamline(0, static_cast<int>(sig0.size())), {}, { { "signal", sig0 } });
-  writer->PushStreamline(MakeStreamline(10, static_cast<int>(sig1.size())), {}, { { "signal", sig1 } });
-  writer->Finalize();
-
-  auto reader = itk::TrxFileReader::New();
-  reader->SetFileName(outputPath);
-  reader->Update();
-  auto data = reader->GetOutput();
-  if (!data)
-  {
-    std::cerr << "[DpvFields] Failed to read output.\n";
-    return false;
-  }
-
-  auto fieldNames = data->GetDpvFieldNames();
-  if (std::find(fieldNames.begin(), fieldNames.end(), "signal") == fieldNames.end())
-  {
-    std::cerr << "[DpvFields] 'signal' not found in DPV field names.\n";
-    return false;
-  }
-
-  auto sig = data->GetDpvField("signal");
-  const size_t expectedLen = sig0.size() + sig1.size();
-  if (sig.size() != expectedLen)
-  {
-    std::cerr << "[DpvFields] signal field size mismatch: " << sig.size() << " expected " << expectedLen << "\n";
-    return false;
-  }
-
-  // Verify first streamline's values
-  for (size_t i = 0; i < sig0.size(); ++i)
-  {
-    if (std::abs(sig[i] - static_cast<float>(sig0[i])) > 1e-5f)
-    {
-      std::cerr << "[DpvFields] signal[" << i << "] mismatch: " << sig[i] << " expected " << sig0[i] << "\n";
-      return false;
-    }
-  }
-  // Verify second streamline's values
-  for (size_t i = 0; i < sig1.size(); ++i)
-  {
-    if (std::abs(sig[sig0.size() + i] - static_cast<float>(sig1[i])) > 1e-5f)
-    {
-      std::cerr << "[DpvFields] signal[" << (sig0.size() + i) << "] mismatch.\n";
-      return false;
-    }
-  }
-
-  return true;
-}
-
-// -----------------------------------------------------------------------
-// Test 9: Comprehensive round-trip: 5 streamlines, 2 groups, DPS, DPV, DPG
+// Test 7 (formerly 9): Comprehensive round-trip: 5 streamlines, 2 groups, DPS, DPV, DPG
 // -----------------------------------------------------------------------
 bool
 TestGroupRoundTrip(const std::string & basePath)
@@ -648,6 +556,15 @@ TestGroupRoundTrip(const std::string & basePath)
   const std::string outputPath = basePath + "_rt.trx";
   CleanupPath(writePath);
   CleanupPath(outputPath);
+  struct Guard
+  {
+    std::vector<std::string> paths;
+    ~Guard()
+    {
+      for (const auto & p : paths)
+        CleanupPath(p);
+    }
+  } guard{ { writePath, outputPath } };
 
   const std::vector<double> faValues = { 0.1, 0.2, 0.3, 0.7, 0.9 };
   // 5 streamlines: 2 pts each
@@ -794,6 +711,11 @@ TestGroupConnectivity(const std::string & basePath)
 {
   const std::string outputPath = basePath + "_conn.trx";
   CleanupPath(outputPath);
+  struct Guard
+  {
+    std::string path;
+    ~Guard() { CleanupPath(path); }
+  } guard{ outputPath };
 
   {
     auto writer = itk::TrxStreamWriter::New();
@@ -949,18 +871,6 @@ itkTrxGroupTest(int argc, char * argv[])
 
   std::cerr << "[GroupTest] TestGroupGetStreamlines" << std::endl;
   if (!TestGroupGetStreamlines(basePath))
-  {
-    return EXIT_FAILURE;
-  }
-
-  std::cerr << "[GroupTest] TestDpsFields" << std::endl;
-  if (!TestDpsFields(basePath))
-  {
-    return EXIT_FAILURE;
-  }
-
-  std::cerr << "[GroupTest] TestDpvFields" << std::endl;
-  if (!TestDpvFields(basePath))
   {
     return EXIT_FAILURE;
   }

@@ -46,11 +46,15 @@ class TrxHandleBase;
 class TrxStreamWriter;
 /**
  * \class TrxStreamlineData
- * \brief Data object holding TRX streamline points and offsets.
+ * \brief Central data container for TRX tractography files.
  *
- * Positions are stored as a contiguous array of XYZ triplets. Offsets define the
- * start index of each streamline in the positions array and include a sentinel
- * entry at the end equal to the total number of vertices.
+ * Holds lazy-loaded streamline positions (Float16/32/64) and per-streamline
+ * offsets. Positions are stored as a contiguous array of XYZ triplets; offsets
+ * define the start index of each streamline and include a sentinel at the end.
+ *
+ * Supports AABB spatial queries, lazy/eager subsetting, chunked iteration,
+ * zero-copy views, named group access (GetGroupNames(), GetGroup()), DPS/DPV
+ * field enumeration, and connectivity matrix computation between groups.
  *
  * \ingroup TractographyTRX
  */
@@ -361,12 +365,29 @@ public:
   std::vector<float>
   GetDpvField(const std::string & name) const;
 
-  /** Symmetric connectivity matrix over TRX groups. */
+  /**
+   * Result of ComputeGroupConnectivity().
+   *
+   * Both matrices are NxN and symmetric, where N = number of groups.
+   * Row/column order matches groupNames.
+   */
   struct GroupConnectivityResult
   {
+    /** Names of the groups, in matrix row/column order. */
     std::vector<std::string> groupNames;
-    vnl_matrix<double>       matrix;
-    vnl_matrix<double>       streamlineCounts;
+    /**
+     * Primary connectivity matrix.  When ComputeGroupConnectivity() is called
+     * with an empty dpsFieldName, entries are raw streamline counts (same as
+     * streamlineCounts).  When a dpsFieldName is provided, entries are sums of
+     * that DPS field over streamlines shared between each group pair.
+     */
+    vnl_matrix<double> matrix;
+    /**
+     * Raw streamline counts matrix, always populated regardless of whether a
+     * DPS weight field was requested.  Useful for normalizing the weighted
+     * matrix (e.g. computing mean weight per group pair).
+     */
+    vnl_matrix<double> streamlineCounts;
   };
 
   /**

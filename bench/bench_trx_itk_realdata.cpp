@@ -3,6 +3,7 @@
 #include <trx/trx.h>
 
 #include "itkTrxFileReader.h"
+#include "itkTrxGroupTdiMapper.h"
 #include "itkTrxParcellationLabeler.h"
 #include "itkTrxStreamWriter.h"
 #include "itkTrxStreamlineData.h"
@@ -47,6 +48,10 @@ std::vector<ParcellationFiles> g_parcellations;
 
 itk::TrxStreamlineData::Pointer g_itk_reference;
 std::unique_ptr<trx::TrxFile<half>> g_raw_reference;
+std::unordered_map<size_t, std::string> g_subset_trx_artifact_paths;
+std::unordered_map<size_t, std::string> g_subset_trx_with_group_paths;
+std::mutex g_subset_trx_artifact_mutex;
+constexpr const char * kBenchTdiGroupName = "BenchGroup";
 
 constexpr float kSlabThicknessMm = 5.0f;
 constexpr size_t kSlabCount = 20;
@@ -212,6 +217,58 @@ const RawDataset &get_raw_subset(size_t streamlines) {
   auto ids = build_prefix_ids(streamlines);
   RawDataset dataset{g_raw_reference->subset_streamlines(ids, false)};
   return cache.emplace(streamlines, std::move(dataset)).first->second;
+}
+
+std::string get_subset_trx_artifact(size_t streamlines) {
+  std::lock_guard<std::mutex> lock(g_subset_trx_artifact_mutex);
+  const auto found = g_subset_trx_artifact_paths.find(streamlines);
+  if (found != g_subset_trx_artifact_paths.end()) {
+    return found->second;
+  }
+
+  const auto &dataset = get_raw_subset(streamlines);
+  const std::string subset_path = make_temp_path("parcellate_subset_input");
+  dataset.data->save(subset_path, ZIP_CM_STORE);
+  g_subset_trx_artifact_paths.emplace(streamlines, subset_path);
+  return subset_path;
+}
+
+std::vector<uint32_t> build_bench_group_members(size_t streamlines) {
+  std::vector<uint32_t> members;
+  if (streamlines == 0) {
+    return members;
+  }
+  const size_t stride = std::max<size_t>(1, streamlines / 10);
+  members.reserve((streamlines + stride - 1) / stride);
+  for (size_t i = 0; i < streamlines; i += stride) {
+    members.push_back(static_cast<uint32_t>(i));
+  }
+  if (members.empty()) {
+    members.push_back(0);
+  }
+  return members;
+}
+
+std::string get_subset_trx_artifact_with_group(size_t streamlines) {
+  {
+    std::lock_guard<std::mutex> lock(g_subset_trx_artifact_mutex);
+    const auto found = g_subset_trx_with_group_paths.find(streamlines);
+    if (found != g_subset_trx_with_group_paths.end()) {
+      return found->second;
+    }
+  }
+
+  const std::string grouped_input_path = get_subset_trx_artifact(streamlines);
+  const std::string grouped_path = make_temp_path("group_tdi_subset_input");
+  std::filesystem::copy(grouped_input_path, grouped_path, std::filesystem::copy_options::overwrite_existing);
+
+  std::map<std::string, std::vector<uint32_t>> groups;
+  groups[kBenchTdiGroupName] = build_bench_group_members(streamlines);
+  trx::append_groups_to_zip(grouped_path, groups);
+
+  std::lock_guard<std::mutex> lock(g_subset_trx_artifact_mutex);
+  g_subset_trx_with_group_paths[streamlines] = grouped_path;
+  return grouped_path;
 }
 
 void run_itk_translate_write(const itk::TrxStreamlineData::Pointer &data,
@@ -548,6 +605,7 @@ static void BM_Parcellate(benchmark::State &state) {
   }
 
   const auto &dataset = get_itk_subset(streamlines);
+  const std::string subset_input_path = get_subset_trx_artifact(streamlines);
 
   double max_rss_delta_kb = 0.0;
   double max_output_file_bytes = 0.0;
@@ -561,11 +619,8 @@ static void BM_Parcellate(benchmark::State &state) {
 
     auto labeler = itk::TrxParcellationLabeler::New();
     labeler->SetInput(dataset.data);
-    if (streamlines == g_reference_streamline_count)
-    {
-      // Copy-through mode preserves source payload encoding for full-dataset runs.
-      labeler->SetInputFileName(g_reference_trx_path);
-    }
+    // Copy-through mode preserves source payload encoding for every subset size.
+    labeler->SetInputFileName(subset_input_path);
     labeler->SetOutputFileName(out_path);
     labeler->SetDilationRadius(dilation);
     for (const auto &p : g_parcellations) {
@@ -578,9 +633,9 @@ static void BM_Parcellate(benchmark::State &state) {
     labeler->Update();
 
     const double pre_group_file_bytes =
-        static_cast<double>(labeler->GetLastPreGroupFileBytes());
+        static_cast<double>(labeler->GetPreGroupFileBytes());
     const double final_file_bytes =
-        static_cast<double>(labeler->GetLastFinalFileBytes());
+        static_cast<double>(labeler->GetFinalFileBytes());
     max_pre_group_file_bytes = std::max(max_pre_group_file_bytes, pre_group_file_bytes);
     max_output_file_bytes = std::max(max_output_file_bytes, final_file_bytes);
     max_group_overhead_bytes =
@@ -604,6 +659,66 @@ static void BM_Parcellate(benchmark::State &state) {
   state.counters["output_file_bytes"] = max_output_file_bytes;
 }
 
+// Run one full group TDI pass into a reference NIfTI grid.
+// state.range(0) = number of streamlines.
+static void BM_GroupTdi(benchmark::State &state) {
+  const size_t streamlines = static_cast<size_t>(state.range(0));
+  if (streamlines > g_reference_streamline_count) {
+    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+    return;
+  }
+  if (g_parcellations.empty()) {
+    state.SkipWithMessage("skipped: no reference parcellation NIfTI available (use --bench-data-dir)");
+    return;
+  }
+
+  const std::string grouped_trx_path = get_subset_trx_artifact_with_group(streamlines);
+  const std::string reference_nifti = g_parcellations.front().niftiPath;
+  const size_t group_streamlines = build_bench_group_members(streamlines).size();
+
+  double max_rss_delta_kb = 0.0;
+  double max_nonzero_voxels = 0.0;
+  for (auto _ : state) {
+    const double rss_start = get_current_rss_kb();
+    const auto start = std::chrono::steady_clock::now();
+
+    auto mapper = itk::TrxGroupTdiMapper::New();
+    mapper->SetInputFileName(grouped_trx_path);
+    mapper->SetGroupName(kBenchTdiGroupName);
+    mapper->SetReferenceImageFileName(reference_nifti);
+    itk::TrxGroupTdiMapper::Options options;
+    options.voxelStatistic = itk::TrxGroupTdiMapper::VoxelStatistic::Sum;
+    mapper->SetOptions(options);
+    mapper->Update();
+    const auto *out = mapper->GetOutput();
+    if (!out || !out->GetBufferPointer()) {
+      state.SkipWithMessage("skipped: null TDI output");
+      return;
+    }
+
+    const auto dims = out->GetLargestPossibleRegion().GetSize();
+    const size_t nvox = static_cast<size_t>(dims[0]) * static_cast<size_t>(dims[1]) * static_cast<size_t>(dims[2]);
+    size_t nonzero = 0;
+    const auto *buffer = out->GetBufferPointer();
+    for (size_t i = 0; i < nvox; ++i) {
+      if (buffer[i] > 0.0f) {
+        ++nonzero;
+      }
+    }
+    max_nonzero_voxels = std::max(max_nonzero_voxels, static_cast<double>(nonzero));
+
+    const auto end = std::chrono::steady_clock::now();
+    const std::chrono::duration<double> elapsed = end - start;
+    state.SetIterationTime(elapsed.count());
+    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_start);
+  }
+
+  state.counters["streamlines"] = static_cast<double>(streamlines);
+  state.counters["group_streamlines"] = static_cast<double>(group_streamlines);
+  state.counters["nonzero_voxels"] = max_nonzero_voxels;
+  state.counters["max_rss_kb"] = max_rss_delta_kb;
+}
+
 static void ApplyParcellateArgs(benchmark::internal::Benchmark *bench) {
   const auto counts = streamlines_for_benchmarks();
   // dilation radius 0 (no dilation) only — add more rows for additional radii.
@@ -613,8 +728,21 @@ static void ApplyParcellateArgs(benchmark::internal::Benchmark *bench) {
   bench->Iterations(1);
 }
 
+static void ApplyGroupTdiArgs(benchmark::internal::Benchmark *bench) {
+  const auto counts = streamlines_for_benchmarks();
+  for (const auto count : counts) {
+    bench->Args({static_cast<int64_t>(count)});
+  }
+  bench->Iterations(1);
+}
+
 BENCHMARK(BM_Parcellate)
     ->Apply(ApplyParcellateArgs)
+    ->UseManualTime()
+    ->Unit(benchmark::kMillisecond);
+
+BENCHMARK(BM_GroupTdi)
+    ->Apply(ApplyGroupTdiArgs)
     ->UseManualTime()
     ->Unit(benchmark::kMillisecond);
 

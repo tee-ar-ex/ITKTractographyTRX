@@ -6,6 +6,7 @@ project(TractographyTRX)
 set(TractographyTRX_LIBRARIES TractographyTRX)
 
 option(TractographyTRX_BUILD_BENCHMARKS "Build TractographyTRX benchmarks" OFF)
+option(TractographyTRX_BUILD_EXAMPLES "Build TractographyTRX example executables" OFF)
 
 if(NOT ITK_SOURCE_DIR)
   include(itk-module-init.cmake)
@@ -20,4 +21,8 @@ endif()
 if(TractographyTRX_BUILD_BENCHMARKS)
   find_package(benchmark REQUIRED)
   add_subdirectory(bench)
+endif()
+
+if(TractographyTRX_BUILD_EXAMPLES)
+  add_subdirectory(examples)
 endif()

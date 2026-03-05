@@ -9,6 +9,7 @@ set(
   itkTrxStreamlineData.cxx
   itkTrxStreamWriter.cxx
   itkTrxParcellationLabeler.cxx
+  itkTrxGroupTdiMapper.cxx
 )
 
 itk_module_add_library(TractographyTRX ${TractographyTRX_SRCS})

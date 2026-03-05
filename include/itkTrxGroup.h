@@ -37,6 +37,9 @@ class TrxStreamlineData; // forward declaration — include itkTrxStreamlineData
  * \class TrxGroup
  * \brief Represents a named group of streamlines within a TRX file.
  *
+ * \note Construction and initialization are performed exclusively by
+ * TrxStreamlineData::GetGroup(). Do not construct TrxGroup objects directly.
+ *
  * A TRX file can contain named groups (e.g., "CST_left", "AF_right"), each of
  * which is a subset of the total streamline set. TrxGroup stores the group's
  * name, its streamline indices, any per-group scalar fields (DPG), and GUI
@@ -174,11 +177,17 @@ public:
    * Callers must #include "itkTrxStreamlineData.h" to use this method.
    */
   SmartPointer<TrxStreamlineData>
-  GetStreamlines(const TrxStreamlineData * parent) const;
+  GetStreamlines(SmartPointer<const TrxStreamlineData> parent) const;
 
-  // -----------------------------------------------------------------------
-  // Internal factory helpers (used by TrxStreamlineData::GetGroup())
-  // -----------------------------------------------------------------------
+protected:
+  TrxGroup() = default;
+  ~TrxGroup() override = default;
+
+  void
+  PrintSelf(std::ostream & os, Indent indent) const override;
+
+private:
+  friend class TrxStreamlineData;
 
   /** Set group name — called once at construction by TrxStreamlineData. */
   void
@@ -192,14 +201,6 @@ public:
   void
   SetDpgFields(std::map<std::string, std::vector<float>> dpgFields);
 
-protected:
-  TrxGroup() = default;
-  ~TrxGroup() override = default;
-
-  void
-  PrintSelf(std::ostream & os, Indent indent) const override;
-
-private:
   std::string                               m_Name;
   std::vector<uint32_t>                     m_StreamlineIndices;
   std::map<std::string, std::vector<float>> m_DpgFields;
