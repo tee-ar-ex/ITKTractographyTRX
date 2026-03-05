@@ -1,0 +1,454 @@
+/*=========================================================================
+ *
+ *  Copyright NumFOCUS
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *         https://www.apache.org/licenses/LICENSE-2.0.txt
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
+ *=========================================================================*/
+
+#include "itkImage.h"
+#include "itkImageFileWriter.h"
+#include "itkNiftiImageIO.h"
+#include "itkTrxGroupTdiMapper.h"
+#include "itkTrxStreamWriter.h"
+
+#include "itksys/SystemTools.hxx"
+
+#include <trx/trx.h>
+
+#include <cmath>
+#include <iostream>
+#include <map>
+#include <string>
+#include <vector>
+
+namespace
+{
+using ImageType = itk::Image<float, 3>;
+
+bool
+MakeDir(const std::string & path)
+{
+  return itksys::SystemTools::MakeDirectory(path).IsSuccess();
+}
+
+void
+Cleanup(const std::string & path)
+{
+  if (itksys::SystemTools::FileIsDirectory(path))
+  {
+    itksys::SystemTools::RemoveADirectory(path);
+  }
+  else if (itksys::SystemTools::FileExists(path, true))
+  {
+    itksys::SystemTools::RemoveFile(path);
+  }
+}
+
+bool
+WriteReferenceImage(const std::string & niftiPath)
+{
+  ImageType::IndexType start;
+  start.Fill(0);
+  ImageType::SizeType size;
+  size.Fill(20);
+  ImageType::RegionType region(start, size);
+
+  auto image = ImageType::New();
+  image->SetRegions(region);
+  image->Allocate(true);
+  ImageType::SpacingType spacing;
+  spacing.Fill(1.0);
+  image->SetSpacing(spacing);
+  ImageType::PointType origin;
+  origin.Fill(0.0);
+  image->SetOrigin(origin);
+  ImageType::DirectionType direction;
+  direction.SetIdentity();
+  image->SetDirection(direction);
+
+  using WriterType = itk::ImageFileWriter<ImageType>;
+  auto io = itk::NiftiImageIO::New();
+  auto writer = WriterType::New();
+  writer->SetImageIO(io);
+  writer->SetFileName(niftiPath);
+  writer->SetInput(image);
+  try
+  {
+    writer->Update();
+  }
+  catch (const itk::ExceptionObject & e)
+  {
+    std::cerr << "Failed to write reference image: " << e << '\n';
+    return false;
+  }
+  return true;
+}
+
+bool
+WriteSyntheticTrxWithMismatchedHeader(const std::string & trxPath)
+{
+  using WriterType = itk::TrxStreamWriter;
+  using PointType = WriterType::PointType;
+  using StreamlineType = WriterType::StreamlineType;
+
+  auto writer = WriterType::New();
+  writer->SetFileName(trxPath);
+  WriterType::DimensionsType dims;
+  dims[0] = 20;
+  dims[1] = 20;
+  dims[2] = 20;
+  writer->SetDimensions(dims);
+
+  // Intentionally mismatched header geometry. The mapper must ignore this and
+  // only use the reference NIfTI geometry for voxel assignment.
+  WriterType::MatrixType voxelToLps;
+  voxelToLps.SetIdentity();
+  voxelToLps[0][3] = 100.0;
+  voxelToLps[1][3] = -200.0;
+  voxelToLps[2][3] = 50.0;
+  writer->SetVoxelToLpsMatrix(voxelToLps);
+
+  // Streamline 0 (in group): visits voxel (3,3,3) twice, and voxel (4,4,4) once.
+  {
+    StreamlineType sl;
+    sl.push_back(PointType{ { 3.1, 3.1, 3.1 } });
+    sl.push_back(PointType{ { 3.4, 3.4, 3.4 } });
+    sl.push_back(PointType{ { 4.0, 4.0, 4.0 } });
+    writer->PushStreamline(sl, {}, {}, {});
+  }
+  // Streamline 1 (not in group): visits voxel (3,3,3), should be ignored.
+  {
+    StreamlineType sl;
+    sl.push_back(PointType{ { 3.2, 3.2, 3.2 } });
+    writer->PushStreamline(sl, {}, {}, {});
+  }
+  // Streamline 2 (in group): visits voxel (3,3,3), and an out-of-bounds point.
+  {
+    StreamlineType sl;
+    sl.push_back(PointType{ { 3.0, 3.0, 3.0 } });
+    sl.push_back(PointType{ { 1000.0, 1000.0, 1000.0 } });
+    writer->PushStreamline(sl, {}, {}, {});
+  }
+
+  try
+  {
+    writer->Finalize();
+  }
+  catch (const itk::ExceptionObject & e)
+  {
+    std::cerr << "Failed to write synthetic TRX: " << e << '\n';
+    return false;
+  }
+
+  std::map<std::string, std::vector<uint32_t>> groups;
+  groups["TargetGroup"] = { 0, 2 };
+  try
+  {
+    trx::append_groups_to_zip(trxPath, groups);
+  }
+  catch (const std::exception & e)
+  {
+    std::cerr << "Failed to append groups: " << e.what() << '\n';
+    return false;
+  }
+  return true;
+}
+
+inline size_t
+Flatten(size_t i, size_t j, size_t k, size_t nx, size_t ny)
+{
+  return i + nx * (j + ny * k);
+}
+
+bool
+RunSumAssertions(const std::string & trxPath, const std::string & referencePath)
+{
+  auto mapper = itk::TrxGroupTdiMapper::New();
+  mapper->SetInputFileName(trxPath);
+  mapper->SetGroupName("TargetGroup");
+  mapper->SetReferenceImageFileName(referencePath);
+  itk::TrxGroupTdiMapper::Options options;
+  options.voxelStatistic = itk::TrxGroupTdiMapper::VoxelStatistic::Sum;
+  mapper->SetOptions(options);
+  mapper->Update();
+  const auto * out = mapper->GetOutput();
+  if (!out)
+  {
+    std::cerr << "FAIL: null output image in sum mode.\n";
+    return false;
+  }
+
+  const auto size = out->GetLargestPossibleRegion().GetSize();
+  const size_t nx = size[0];
+  const size_t ny = size[1];
+  const size_t nz = size[2];
+  const auto * buffer = out->GetBufferPointer();
+  if (!buffer)
+  {
+    std::cerr << "FAIL: null output buffer in sum mode.\n";
+    return false;
+  }
+  const float v333 = buffer[Flatten(3, 3, 3, nx, ny)];
+  const float v444 = buffer[Flatten(4, 4, 4, nx, ny)];
+  const float v222 = buffer[Flatten(2, 2, 2, nx, ny)];
+
+  constexpr float tol = 1e-6f;
+  if (std::abs(v333 - 2.0f) > tol || std::abs(v444 - 1.0f) > tol || std::abs(v222) > tol)
+  {
+    std::cerr << "FAIL: sum mode mismatch."
+              << " v333=" << v333 << " v444=" << v444 << " v222=" << v222 << '\n';
+    return false;
+  }
+
+  size_t nonZero = 0;
+  for (size_t idx = 0; idx < nx * ny * nz; ++idx)
+  {
+    if (buffer[idx] != 0.0f)
+    {
+      ++nonZero;
+    }
+  }
+  if (nonZero != 2)
+  {
+    std::cerr << "FAIL: expected exactly 2 non-zero voxels in sum mode, got " << nonZero << '\n';
+    return false;
+  }
+  return true;
+}
+
+bool
+RunMeanAssertions(const std::string & trxPath, const std::string & referencePath)
+{
+  auto mapper = itk::TrxGroupTdiMapper::New();
+  mapper->SetInputFileName(trxPath);
+  mapper->SetGroupName("TargetGroup");
+  mapper->SetReferenceImageFileName(referencePath);
+  itk::TrxGroupTdiMapper::Options options;
+  options.voxelStatistic = itk::TrxGroupTdiMapper::VoxelStatistic::Mean;
+  mapper->SetOptions(options);
+  mapper->Update();
+  const auto * out = mapper->GetOutput();
+  if (!out)
+  {
+    std::cerr << "FAIL: null output image in mean mode.\n";
+    return false;
+  }
+
+  const auto size = out->GetLargestPossibleRegion().GetSize();
+  const size_t nx = size[0];
+  const size_t ny = size[1];
+  const auto * buffer = out->GetBufferPointer();
+  if (!buffer)
+  {
+    std::cerr << "FAIL: null output buffer in mean mode.\n";
+    return false;
+  }
+  const float v333 = buffer[Flatten(3, 3, 3, nx, ny)];
+  const float v444 = buffer[Flatten(4, 4, 4, nx, ny)];
+
+  constexpr float tol = 1e-6f;
+  if (std::abs(v333 - 1.0f) > tol || std::abs(v444 - 1.0f) > tol)
+  {
+    std::cerr << "FAIL: mean mode mismatch."
+              << " v333=" << v333 << " v444=" << v444 << '\n';
+    return false;
+  }
+  return true;
+}
+
+bool
+RunMissingGroupFailureCheck(const std::string & trxPath, const std::string & referencePath)
+{
+  auto mapper = itk::TrxGroupTdiMapper::New();
+  mapper->SetInputFileName(trxPath);
+  mapper->SetGroupName("DoesNotExist");
+  mapper->SetReferenceImageFileName(referencePath);
+  try
+  {
+    mapper->Update();
+  }
+  catch (const itk::ExceptionObject &)
+  {
+    return true;
+  }
+  std::cerr << "FAIL: expected missing-group exception was not thrown.\n";
+  return false;
+}
+
+bool
+RunSelectedIdsAssertions(const std::string & trxPath, const std::string & referencePath)
+{
+  auto mapper = itk::TrxGroupTdiMapper::New();
+  mapper->SetInputFileName(trxPath);
+  mapper->SetReferenceImageFileName(referencePath);
+  mapper->SetSelectedStreamlineIds({ 0, 2 });
+  itk::TrxGroupTdiMapper::Options options;
+  options.voxelStatistic = itk::TrxGroupTdiMapper::VoxelStatistic::Sum;
+  mapper->SetOptions(options);
+  mapper->Update();
+  const auto * out = mapper->GetOutput();
+  if (!out || !out->GetBufferPointer())
+  {
+    std::cerr << "FAIL: null output for selected-id path.\n";
+    return false;
+  }
+
+  const auto size = out->GetLargestPossibleRegion().GetSize();
+  const size_t nx = size[0];
+  const size_t ny = size[1];
+  const auto * buffer = out->GetBufferPointer();
+  constexpr float tol = 1e-6f;
+  const float v333 = buffer[Flatten(3, 3, 3, nx, ny)];
+  const float v444 = buffer[Flatten(4, 4, 4, nx, ny)];
+  if (std::abs(v333 - 2.0f) > tol || std::abs(v444 - 1.0f) > tol)
+  {
+    std::cerr << "FAIL: selected-id path mismatch. v333=" << v333 << " v444=" << v444 << '\n';
+    return false;
+  }
+  return true;
+}
+
+bool
+RunSelectedIdsGroupIntersectionAssertions(const std::string & trxPath, const std::string & referencePath)
+{
+  auto mapper = itk::TrxGroupTdiMapper::New();
+  mapper->SetInputFileName(trxPath);
+  mapper->SetReferenceImageFileName(referencePath);
+  mapper->SetGroupName("TargetGroup");
+  mapper->SetSelectedStreamlineIds({ 0 });
+  itk::TrxGroupTdiMapper::Options options;
+  options.voxelStatistic = itk::TrxGroupTdiMapper::VoxelStatistic::Sum;
+  mapper->SetOptions(options);
+  mapper->Update();
+  const auto * out = mapper->GetOutput();
+  if (!out || !out->GetBufferPointer())
+  {
+    std::cerr << "FAIL: null output for selected-id/group intersection path.\n";
+    return false;
+  }
+
+  const auto size = out->GetLargestPossibleRegion().GetSize();
+  const size_t nx = size[0];
+  const size_t ny = size[1];
+  const auto * buffer = out->GetBufferPointer();
+  constexpr float tol = 1e-6f;
+  const float v333 = buffer[Flatten(3, 3, 3, nx, ny)];
+  const float v444 = buffer[Flatten(4, 4, 4, nx, ny)];
+  if (std::abs(v333 - 1.0f) > tol || std::abs(v444 - 1.0f) > tol)
+  {
+    std::cerr << "FAIL: selected/group intersection mismatch. v333=" << v333 << " v444=" << v444 << '\n';
+    return false;
+  }
+  return true;
+}
+
+bool
+RunEmptySelectedIdsAssertions(const std::string & trxPath, const std::string & referencePath)
+{
+  auto mapper = itk::TrxGroupTdiMapper::New();
+  mapper->SetInputFileName(trxPath);
+  mapper->SetReferenceImageFileName(referencePath);
+  mapper->SetSelectedStreamlineIds({});
+  mapper->Update();
+  const auto * out = mapper->GetOutput();
+  if (!out || !out->GetBufferPointer())
+  {
+    std::cerr << "FAIL: null output for empty selected-id path.\n";
+    return false;
+  }
+  const auto size = out->GetLargestPossibleRegion().GetSize();
+  const size_t nx = size[0];
+  const size_t ny = size[1];
+  const size_t nz = size[2];
+  const auto * buffer = out->GetBufferPointer();
+  for (size_t idx = 0; idx < nx * ny * nz; ++idx)
+  {
+    if (buffer[idx] != 0.0f)
+    {
+      std::cerr << "FAIL: expected all-zero output for empty selected-id set.\n";
+      return false;
+    }
+  }
+  return true;
+}
+} // namespace
+
+int
+itkTrxGroupTdiMapperTest(int argc, char * argv[])
+{
+  if (argc < 2)
+  {
+    std::cerr << "Usage: " << argv[0] << " <output_dir>\n";
+    return EXIT_FAILURE;
+  }
+
+  const std::string outDir = argv[1];
+  if (!MakeDir(outDir))
+  {
+    std::cerr << "Cannot create output directory: " << outDir << '\n';
+    return EXIT_FAILURE;
+  }
+
+  const std::string referencePath = outDir + "/reference.nii.gz";
+  const std::string trxPath = outDir + "/group_tdi.trx";
+
+  struct Guard
+  {
+    std::vector<std::string> paths;
+    ~Guard()
+    {
+      for (const auto & p : paths)
+      {
+        Cleanup(p);
+      }
+    }
+  } guard;
+  guard.paths = { referencePath, trxPath };
+
+  if (!WriteReferenceImage(referencePath))
+  {
+    return EXIT_FAILURE;
+  }
+  if (!WriteSyntheticTrxWithMismatchedHeader(trxPath))
+  {
+    return EXIT_FAILURE;
+  }
+  if (!RunSumAssertions(trxPath, referencePath))
+  {
+    return EXIT_FAILURE;
+  }
+  if (!RunMeanAssertions(trxPath, referencePath))
+  {
+    return EXIT_FAILURE;
+  }
+  if (!RunMissingGroupFailureCheck(trxPath, referencePath))
+  {
+    return EXIT_FAILURE;
+  }
+  if (!RunSelectedIdsAssertions(trxPath, referencePath))
+  {
+    return EXIT_FAILURE;
+  }
+  if (!RunSelectedIdsGroupIntersectionAssertions(trxPath, referencePath))
+  {
+    return EXIT_FAILURE;
+  }
+  if (!RunEmptySelectedIdsAssertions(trxPath, referencePath))
+  {
+    return EXIT_FAILURE;
+  }
+
+  std::cout << "All TrxGroupTdiMapper tests passed.\n";
+  return EXIT_SUCCESS;
+}

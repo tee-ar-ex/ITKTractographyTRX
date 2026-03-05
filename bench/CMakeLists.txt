@@ -118,11 +118,24 @@ target_link_libraries(bench_trx_itk_realdata
 
 target_compile_features(bench_trx_itk_realdata PRIVATE cxx_std_17)
 
+set(TractographyTRX_BENCH_RESULTS_DIR "${CMAKE_SOURCE_DIR}/bench/results"
+  CACHE PATH "Directory where benchmark JSON output is written.")
+set(TractographyTRX_BENCH_JSON "${TractographyTRX_BENCH_RESULTS_DIR}/bench_trx_itk_realdata.json"
+  CACHE FILEPATH "JSON output path for run_bench.")
+set(TractographyTRX_BENCH_PARCELLATE_JSON "${TractographyTRX_BENCH_RESULTS_DIR}/bench_trx_itk_realdata_parcellate.json"
+  CACHE FILEPATH "JSON output path for run_bench_parcellate.")
+set(TractographyTRX_BENCH_GROUP_TDI_JSON "${TractographyTRX_BENCH_RESULTS_DIR}/bench_trx_itk_realdata_group_tdi.json"
+  CACHE FILEPATH "JSON output path for run_bench_group_tdi.")
+
+file(MAKE_DIRECTORY "${TractographyTRX_BENCH_RESULTS_DIR}")
+
 # Convenience target: run all benchmarks against the downloaded reference data.
 add_custom_target(run_bench
   COMMAND bench_trx_itk_realdata
     --reference-trx "${TractographyTRX_BENCH_REFERENCE_TRX}"
     --bench-data-dir "${TractographyTRX_BENCH_DATA_DIR}"
+    --benchmark_out="${TractographyTRX_BENCH_JSON}"
+    --benchmark_out_format=json
   DEPENDS bench_trx_itk_realdata
   COMMENT "Running ITKTractographyTRX benchmarks"
   USES_TERMINAL
@@ -134,7 +147,22 @@ add_custom_target(run_bench_parcellate
     --reference-trx "${TractographyTRX_BENCH_REFERENCE_TRX}"
     --bench-data-dir "${TractographyTRX_BENCH_DATA_DIR}"
     --benchmark_filter=BM_Parcellate
+    --benchmark_out="${TractographyTRX_BENCH_PARCELLATE_JSON}"
+    --benchmark_out_format=json
   DEPENDS bench_trx_itk_realdata
   COMMENT "Running parcellation benchmarks only"
+  USES_TERMINAL
+)
+
+# Group-TDI-only subset.
+add_custom_target(run_bench_group_tdi
+  COMMAND bench_trx_itk_realdata
+    --reference-trx "${TractographyTRX_BENCH_REFERENCE_TRX}"
+    --bench-data-dir "${TractographyTRX_BENCH_DATA_DIR}"
+    --benchmark_filter=BM_GroupTdi
+    --benchmark_out="${TractographyTRX_BENCH_GROUP_TDI_JSON}"
+    --benchmark_out_format=json
+  DEPENDS bench_trx_itk_realdata
+  COMMENT "Running Group TDI benchmarks only"
   USES_TERMINAL
 )
