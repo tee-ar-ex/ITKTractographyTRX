@@ -177,7 +177,7 @@ public:
    * Callers must #include "itkTrxStreamlineData.h" to use this method.
    */
   SmartPointer<TrxStreamlineData>
-  GetStreamlines(TrxStreamlineData::ConstPointer parent) const;
+  GetStreamlines(SmartPointer<const TrxStreamlineData> parent) const;
 
 protected:
   TrxGroup() = default;
