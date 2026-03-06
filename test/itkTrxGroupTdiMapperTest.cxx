@@ -184,8 +184,8 @@ struct LpsToVoxelState
 
 struct RasToVoxelState
 {
-  std::array<double, 9> M{};
-  std::array<double, 3> b{};
+  std::array<double, 9> LpsM{};
+  std::array<double, 3> origin{};
   itk::Index<3>         bufferStart{};
   itk::Size<3>          bufferSize{};
 };
@@ -222,29 +222,13 @@ BuildRasToVoxelState(const ImageType * image)
   const auto & invDir = image->GetInverseDirection();
   const auto & spacing = image->GetSpacing();
   const auto & origin = image->GetOrigin();
-  const double lpsToVoxel[9] = { invDir(0, 0) / spacing[0],
-                                 invDir(0, 1) / spacing[0],
-                                 invDir(0, 2) / spacing[0],
-                                 invDir(1, 0) / spacing[1],
-                                 invDir(1, 1) / spacing[1],
-                                 invDir(1, 2) / spacing[1],
-                                 invDir(2, 0) / spacing[2],
-                                 invDir(2, 1) / spacing[2],
-                                 invDir(2, 2) / spacing[2] };
-  const double rasToLps[9] = { -1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0 };
   for (int r = 0; r < 3; ++r)
   {
     for (int c = 0; c < 3; ++c)
     {
-      double sum = 0.0;
-      for (int k = 0; k < 3; ++k)
-      {
-        sum += lpsToVoxel[r * 3 + k] * rasToLps[k * 3 + c];
-      }
-      state.M[static_cast<size_t>(r * 3 + c)] = sum;
+      state.LpsM[static_cast<size_t>(r * 3 + c)] = invDir(r, c) / spacing[r];
     }
-    state.b[static_cast<size_t>(r)] = -(lpsToVoxel[r * 3 + 0] * origin[0] + lpsToVoxel[r * 3 + 1] * origin[1] +
-                                        lpsToVoxel[r * 3 + 2] * origin[2]);
+    state.origin[static_cast<size_t>(r)] = origin[r];
   }
   return state;
 }
@@ -279,9 +263,15 @@ RasPointToIndexLikeGroupTdi(const RasToVoxelState & state,
                             ImageType::IndexType & index)
 {
   using IndexValueType = ImageType::IndexType::IndexValueType;
-  const double fi = state.M[0] * pointRas[0] + state.M[1] * pointRas[1] + state.M[2] * pointRas[2] + state.b[0];
-  const double fj = state.M[3] * pointRas[0] + state.M[4] * pointRas[1] + state.M[5] * pointRas[2] + state.b[1];
-  const double fk = state.M[6] * pointRas[0] + state.M[7] * pointRas[1] + state.M[8] * pointRas[2] + state.b[2];
+  const double lx = -pointRas[0];
+  const double ly = -pointRas[1];
+  const double lz = pointRas[2];
+  const double dx = lx - state.origin[0];
+  const double dy = ly - state.origin[1];
+  const double dz = lz - state.origin[2];
+  const double fi = state.LpsM[0] * dx + state.LpsM[1] * dy + state.LpsM[2] * dz;
+  const double fj = state.LpsM[3] * dx + state.LpsM[4] * dy + state.LpsM[5] * dz;
+  const double fk = state.LpsM[6] * dx + state.LpsM[7] * dy + state.LpsM[8] * dz;
   const int i = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fi));
   const int j = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fj));
   const int k = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fk));
@@ -362,12 +352,12 @@ RunPointToIndexParityAssertions()
   std::vector<ContinuousIndexType> cis = {
     MakeContinuousIndex(-0.5001, 3.25, 4.75),
     MakeContinuousIndex(-0.4999, 3.25, 4.75),
-    MakeContinuousIndex(2.5, 5.5, 7.5),
+    MakeContinuousIndex(2.5001, 5.5001, 7.5001),
     MakeContinuousIndex(6.2, 8.8, 1.1),
     MakeContinuousIndex(16.49, 18.49, 22.49),
     MakeContinuousIndex(16.499, 18.499, 22.499),
     MakeContinuousIndex(-1.49, 4.2, 6.9),
-    MakeContinuousIndex(7.5, -0.5001, 10.5)
+    MakeContinuousIndex(7.5001, -0.5001, 10.5001)
   };
 
   for (const auto & ci : cis)

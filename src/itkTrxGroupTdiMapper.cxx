@@ -40,8 +40,8 @@ using RefImageType = TrxGroupTdiMapper::OutputImageType;
 
 struct RasToVoxelState
 {
-  std::array<double, 9> M{};
-  std::array<double, 3> b{};
+  std::array<double, 9> LpsM{};
+  std::array<double, 3> origin{};
   itk::Index<3>         bufferStart{};
   itk::Size<3>          bufferSize{};
 };
@@ -58,30 +58,13 @@ BuildRasToVoxelState(const RefImageType * image)
   const auto & spacing = image->GetSpacing();
   const auto & origin = image->GetOrigin();
 
-  const double lpsToVoxel[9] = { invDir(0, 0) / spacing[0],
-                                 invDir(0, 1) / spacing[0],
-                                 invDir(0, 2) / spacing[0],
-                                 invDir(1, 0) / spacing[1],
-                                 invDir(1, 1) / spacing[1],
-                                 invDir(1, 2) / spacing[1],
-                                 invDir(2, 0) / spacing[2],
-                                 invDir(2, 1) / spacing[2],
-                                 invDir(2, 2) / spacing[2] };
-  const double rasToLps[9] = { -1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0 };
-
   for (int r = 0; r < 3; ++r)
   {
     for (int c = 0; c < 3; ++c)
     {
-      double sum = 0.0;
-      for (int k = 0; k < 3; ++k)
-      {
-        sum += lpsToVoxel[r * 3 + k] * rasToLps[k * 3 + c];
-      }
-      state.M[static_cast<size_t>(r * 3 + c)] = sum;
+      state.LpsM[static_cast<size_t>(r * 3 + c)] = invDir(r, c) / spacing[r];
     }
-    state.b[static_cast<size_t>(r)] = -(lpsToVoxel[r * 3 + 0] * origin[0] + lpsToVoxel[r * 3 + 1] * origin[1] +
-                                        lpsToVoxel[r * 3 + 2] * origin[2]);
+    state.origin[static_cast<size_t>(r)] = origin[r];
   }
   return state;
 }
@@ -90,9 +73,15 @@ inline bool
 RasPointToIndex(const RasToVoxelState & state, double rx, double ry, double rz, int & i, int & j, int & k)
 {
   using IndexValueType = RefImageType::IndexType::IndexValueType;
-  const double fi = state.M[0] * rx + state.M[1] * ry + state.M[2] * rz + state.b[0];
-  const double fj = state.M[3] * rx + state.M[4] * ry + state.M[5] * rz + state.b[1];
-  const double fk = state.M[6] * rx + state.M[7] * ry + state.M[8] * rz + state.b[2];
+  const double lx = -rx;
+  const double ly = -ry;
+  const double lz = rz;
+  const double dx = lx - state.origin[0];
+  const double dy = ly - state.origin[1];
+  const double dz = lz - state.origin[2];
+  const double fi = state.LpsM[0] * dx + state.LpsM[1] * dy + state.LpsM[2] * dz;
+  const double fj = state.LpsM[3] * dx + state.LpsM[4] * dy + state.LpsM[5] * dz;
+  const double fk = state.LpsM[6] * dx + state.LpsM[7] * dy + state.LpsM[8] * dz;
 
   i = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fi));
   j = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fj));
