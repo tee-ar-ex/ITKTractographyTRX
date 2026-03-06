@@ -78,6 +78,8 @@ public:
   InvalidateAabbCache() const = 0;
   virtual std::vector<std::string>
   GetGroupNames() const = 0;
+  virtual size_t
+  GetGroupStreamlineCount(const std::string & name) const = 0;
   virtual std::vector<uint32_t>
   GetGroupIndices(const std::string & name) const = 0;
   virtual std::vector<std::string>
@@ -343,15 +345,26 @@ public:
     return names;
   }
 
+  size_t
+  GetGroupStreamlineCount(const std::string & name) const override
+  {
+    const auto * group = m_Trx->get_group_members(name);
+    if (!group)
+    {
+      return 0;
+    }
+    return static_cast<size_t>(group->matrix().size());
+  }
+
   std::vector<uint32_t>
   GetGroupIndices(const std::string & name) const override
   {
-    auto it = m_Trx->groups.find(name);
-    if (it == m_Trx->groups.end())
+    const auto * group = m_Trx->get_group_members(name);
+    if (!group)
     {
       return {};
     }
-    const auto & mat = it->second->matrix();
+    const auto & mat = group->matrix();
     return std::vector<uint32_t>(mat.data(), mat.data() + mat.size());
   }
 
@@ -1553,6 +1566,21 @@ TrxStreamlineData::GetGroup(const std::string & name) const
 
   m_GroupCache[name] = group;
   return group;
+}
+
+SizeValueType
+TrxStreamlineData::GetGroupStreamlineCount(const std::string & name) const
+{
+  if (!m_TrxHandle)
+  {
+    auto it = m_GroupCache.find(name);
+    if (it != m_GroupCache.end() && it->second)
+    {
+      return static_cast<SizeValueType>(it->second->GetStreamlineIndices().size());
+    }
+    return 0;
+  }
+  return static_cast<SizeValueType>(m_TrxHandle->GetGroupStreamlineCount(name));
 }
 
 std::vector<std::string>

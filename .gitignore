@@ -2,4 +2,6 @@ build/
 build-release/
 build-tests/
 bench/**/*.json
+!bench/results/bench_trx_itk_realdata.json
+bench/results/plots/**/*.png
 build-*
