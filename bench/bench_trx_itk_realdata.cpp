@@ -13,11 +13,12 @@
 #include <array>
 #include <atomic>
 #include <chrono>
-#include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <mutex>
 #include <string>
@@ -55,6 +56,7 @@ constexpr const char * kBenchTdiGroupName = "BenchGroup";
 
 constexpr float kSlabThicknessMm = 5.0f;
 constexpr size_t kSlabCount = 20;
+constexpr size_t kDefaultMaxQueryStreamlines = 500;
 
 struct Fov {
   float min_x;
@@ -105,6 +107,38 @@ double get_current_rss_kb() {
 #endif
 }
 
+double get_current_phys_footprint_kb() {
+#if defined(__APPLE__)
+  task_vm_info_data_t vm_info;
+  mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+  if (task_info(mach_task_self(), TASK_VM_INFO, reinterpret_cast<task_info_t>(&vm_info), &count) != KERN_SUCCESS) {
+    return 0.0;
+  }
+  return static_cast<double>(vm_info.phys_footprint) / 1024.0;
+#else
+  // Fallback for non-macOS builds where phys_footprint is unavailable.
+  return get_current_rss_kb();
+#endif
+}
+
+double get_peak_rss_kb() {
+#if defined(__unix__) || defined(__APPLE__)
+  struct rusage usage;
+  if (getrusage(RUSAGE_SELF, &usage) != 0) {
+    return 0.0;
+  }
+#if defined(__APPLE__)
+  // ru_maxrss is bytes on macOS.
+  return static_cast<double>(usage.ru_maxrss) / 1024.0;
+#else
+  // ru_maxrss is kilobytes on Linux.
+  return static_cast<double>(usage.ru_maxrss);
+#endif
+#else
+  return 0.0;
+#endif
+}
+
 size_t parse_env_size(const char *name, size_t default_value) {
   const char *raw = std::getenv(name);
   if (!raw || raw[0] == '\0') {
@@ -124,6 +158,16 @@ bool parse_env_bool(const char *name, bool default_value) {
     return default_value;
   }
   return std::string(raw) != "0";
+}
+
+size_t resolve_query_streamline_cap() {
+  const size_t cap = parse_env_size("TRX_BENCH_MAX_QUERY_STREAMLINES", kDefaultMaxQueryStreamlines);
+  if (cap == 0) {
+    std::cerr << "[trx-itk-bench] TRX_BENCH_MAX_QUERY_STREAMLINES=0 is not supported for publication benchmarks; "
+              << "using " << kDefaultMaxQueryStreamlines << " instead.\n";
+    return kDefaultMaxQueryStreamlines;
+  }
+  return cap;
 }
 
 std::vector<size_t> streamlines_for_benchmarks() {
@@ -194,6 +238,94 @@ struct ItkDataset {
 struct RawDataset {
   std::unique_ptr<trx::TrxFile<half>> data;
 };
+
+struct RuntimeMemoryStats {
+  double max_rss_delta_kb = 0.0;
+  double baseline_rss_kb = std::numeric_limits<double>::infinity();
+  double peak_rss_kb = 0.0;
+  double max_phys_delta_kb = 0.0;
+  double baseline_phys_kb = std::numeric_limits<double>::infinity();
+  double peak_phys_kb = 0.0;
+
+  double rss_start_kb = 0.0;
+  double peak_start_kb = 0.0;
+  double phys_start_kb = 0.0;
+
+  void BeginIteration() {
+    rss_start_kb = get_current_rss_kb();
+    peak_start_kb = get_peak_rss_kb();
+    phys_start_kb = get_current_phys_footprint_kb();
+    baseline_rss_kb = std::min(baseline_rss_kb, rss_start_kb);
+    baseline_phys_kb = std::min(baseline_phys_kb, phys_start_kb);
+  }
+
+  void EndIteration() {
+    const double rss_end = get_current_rss_kb();
+    const double peak_end = get_peak_rss_kb();
+    const double phys_end = get_current_phys_footprint_kb();
+    peak_rss_kb = std::max(peak_rss_kb, peak_end);
+    peak_phys_kb = std::max(peak_phys_kb, phys_end);
+    max_rss_delta_kb = std::max(max_rss_delta_kb, std::max(rss_end - rss_start_kb, peak_end - peak_start_kb));
+    max_phys_delta_kb = std::max(max_phys_delta_kb, phys_end - phys_start_kb);
+  }
+
+  void PublishCounters(benchmark::State &state) const {
+    state.counters["max_rss_kb"] = max_rss_delta_kb;
+    state.counters["rss_baseline_kb"] = std::isfinite(baseline_rss_kb) ? baseline_rss_kb : 0.0;
+    state.counters["rss_peak_kb"] = peak_rss_kb;
+    state.counters["max_phys_delta_kb"] = max_phys_delta_kb;
+    state.counters["phys_baseline_kb"] = std::isfinite(baseline_phys_kb) ? baseline_phys_kb : 0.0;
+    state.counters["phys_peak_kb"] = peak_phys_kb;
+  }
+};
+
+bool ValidateStreamlineCount(benchmark::State &state, size_t streamlines) {
+  if (streamlines > g_reference_streamline_count) {
+    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+    return false;
+  }
+  return true;
+}
+
+void PublishQueryCounters(benchmark::State &state,
+                          const std::vector<double> &slab_times_ms,
+                          const std::vector<size_t> &slab_counts,
+                          size_t total) {
+  state.counters["query_total_returned"] = static_cast<double>(total);
+  for (size_t i = 0; i < slab_times_ms.size(); ++i) {
+    char time_name[64];
+    char count_name[64];
+    std::snprintf(time_name, sizeof(time_name), "query_slab_%02zu_ms", i);
+    std::snprintf(count_name, sizeof(count_name), "query_slab_%02zu_count", i);
+    state.counters[time_name] = slab_times_ms[i];
+    state.counters[count_name] = static_cast<double>(slab_counts[i]);
+  }
+}
+
+itk::TrxStreamWriter::Pointer CreateUncompressedWriter(const std::string &out_path) {
+  auto writer = itk::TrxStreamWriter::New();
+  writer->SetFileName(out_path);
+  writer->SetUseCompression(false);
+  size_t buffer_bytes = parse_env_size("TRX_BENCH_CHUNK_BYTES", 0);
+  if (buffer_bytes == 0) {
+    buffer_bytes = 256ULL * 1024ULL * 1024ULL;
+  }
+  buffer_bytes = static_cast<size_t>(buffer_bytes * 1.5);
+  if (buffer_bytes > 0) {
+    writer->SetPositionsBufferMaxBytes(buffer_bytes);
+  }
+  return writer;
+}
+
+itk::TranslationTransform<double, 3>::Pointer CreateUnitTranslation() {
+  auto transform = itk::TranslationTransform<double, 3>::New();
+  itk::TranslationTransform<double, 3>::OutputVectorType offset;
+  offset[0] = 1.0;
+  offset[1] = 1.0;
+  offset[2] = 1.0;
+  transform->Translate(offset);
+  return transform;
+}
 
 const ItkDataset &get_itk_subset(size_t streamlines) {
   using Key = size_t;
@@ -274,24 +406,8 @@ std::string get_subset_trx_artifact_with_group(size_t streamlines) {
 void run_itk_translate_write(const itk::TrxStreamlineData::Pointer &data,
                              const std::string &out_path,
                              itk::TrxStreamlineData::StreamlineType &buffer) {
-  auto writer = itk::TrxStreamWriter::New();
-  writer->SetFileName(out_path);
-  writer->SetUseCompression(false);
-  size_t buffer_bytes = parse_env_size("TRX_BENCH_CHUNK_BYTES", 0);
-  if (buffer_bytes == 0) {
-    buffer_bytes = 256ULL * 1024ULL * 1024ULL;
-  }
-  buffer_bytes = static_cast<size_t>(buffer_bytes * 1.5);
-  if (buffer_bytes > 0) {
-    writer->SetPositionsBufferMaxBytes(buffer_bytes);
-  }
-  auto transform = itk::TranslationTransform<double, 3>::New();
-  itk::TranslationTransform<double, 3>::OutputVectorType offset;
-  offset[0] = 1.0;
-  offset[1] = 1.0;
-  offset[2] = 1.0;
-  transform->Translate(offset);
-
+  auto writer = CreateUncompressedWriter(out_path);
+  auto transform = CreateUnitTranslation();
   data->TransformToWriterChunkedReuseBuffer(transform.GetPointer(), writer, buffer);
   writer->Finalize();
 }
@@ -299,24 +415,8 @@ void run_itk_translate_write(const itk::TrxStreamlineData::Pointer &data,
 void run_itk_translate_write_vnl(const itk::TrxStreamlineData::Pointer &data,
                                  const std::string &out_path,
                                  vnl_matrix<double> &buffer) {
-  auto writer = itk::TrxStreamWriter::New();
-  writer->SetFileName(out_path);
-  writer->SetUseCompression(false);
-  size_t buffer_bytes = parse_env_size("TRX_BENCH_CHUNK_BYTES", 0);
-  if (buffer_bytes == 0) {
-    buffer_bytes = 256ULL * 1024ULL * 1024ULL;
-  }
-  buffer_bytes = static_cast<size_t>(buffer_bytes * 1.5);
-  if (buffer_bytes > 0) {
-    writer->SetPositionsBufferMaxBytes(buffer_bytes);
-  }
-  auto transform = itk::TranslationTransform<double, 3>::New();
-  itk::TranslationTransform<double, 3>::OutputVectorType offset;
-  offset[0] = 1.0;
-  offset[1] = 1.0;
-  offset[2] = 1.0;
-  transform->Translate(offset);
-
+  auto writer = CreateUncompressedWriter(out_path);
+  auto transform = CreateUnitTranslation();
   data->TransformToWriterChunkedReuseVnlBuffer(transform.GetPointer(), writer, buffer);
   writer->Finalize();
 }
@@ -346,16 +446,15 @@ void run_raw_translate_write(const trx::TrxFile<half> &data,
 
 static void BM_Itk_TranslateWrite(benchmark::State &state) {
   const size_t streamlines = static_cast<size_t>(state.range(0));
-  if (streamlines > g_reference_streamline_count) {
-    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+  if (!ValidateStreamlineCount(state, streamlines)) {
     return;
   }
   const auto &dataset = get_itk_subset(streamlines);
 
-  double max_rss_delta_kb = 0.0;
+  RuntimeMemoryStats mem;
   itk::TrxStreamlineData::StreamlineType buffer;
   for (auto _ : state) {
-    const double rss_start = get_current_rss_kb();
+    mem.BeginIteration();
     const auto start = std::chrono::steady_clock::now();
     const std::string out_path = make_temp_path("itk_translate");
     run_itk_translate_write(dataset.data, out_path, buffer);
@@ -364,27 +463,26 @@ static void BM_Itk_TranslateWrite(benchmark::State &state) {
     state.SetIterationTime(elapsed.count());
     std::error_code ec;
     std::filesystem::remove_all(out_path, ec);
-    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_start);
+    mem.EndIteration();
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
   state.counters["backend"] = 0.0; // 0 = ITK
   state.counters["positions_dtype"] = 16.0;
-  state.counters["max_rss_kb"] = max_rss_delta_kb;
+  mem.PublishCounters(state);
 }
 
 static void BM_Itk_TranslateWrite_Vnl(benchmark::State &state) {
   const size_t streamlines = static_cast<size_t>(state.range(0));
-  if (streamlines > g_reference_streamline_count) {
-    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+  if (!ValidateStreamlineCount(state, streamlines)) {
     return;
   }
   const auto &dataset = get_itk_subset(streamlines);
 
-  double max_rss_delta_kb = 0.0;
+  RuntimeMemoryStats mem;
   vnl_matrix<double> buffer;
   for (auto _ : state) {
-    const double rss_start = get_current_rss_kb();
+    mem.BeginIteration();
     const auto start = std::chrono::steady_clock::now();
     const std::string out_path = make_temp_path("itk_translate_vnl");
     run_itk_translate_write_vnl(dataset.data, out_path, buffer);
@@ -393,26 +491,25 @@ static void BM_Itk_TranslateWrite_Vnl(benchmark::State &state) {
     state.SetIterationTime(elapsed.count());
     std::error_code ec;
     std::filesystem::remove_all(out_path, ec);
-    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_start);
+    mem.EndIteration();
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
   state.counters["backend"] = 2.0; // 2 = ITK (vnl buffer)
   state.counters["positions_dtype"] = 16.0;
-  state.counters["max_rss_kb"] = max_rss_delta_kb;
+  mem.PublishCounters(state);
 }
 
 static void BM_Raw_TranslateWrite(benchmark::State &state) {
   const size_t streamlines = static_cast<size_t>(state.range(0));
-  if (streamlines > g_reference_streamline_count) {
-    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+  if (!ValidateStreamlineCount(state, streamlines)) {
     return;
   }
   const auto &dataset = get_raw_subset(streamlines);
 
-  double max_rss_delta_kb = 0.0;
+  RuntimeMemoryStats mem;
   for (auto _ : state) {
-    const double rss_start = get_current_rss_kb();
+    mem.BeginIteration();
     const auto start = std::chrono::steady_clock::now();
     const std::string out_path = make_temp_path("raw_translate");
     run_raw_translate_write(*dataset.data, streamlines, out_path);
@@ -421,30 +518,31 @@ static void BM_Raw_TranslateWrite(benchmark::State &state) {
     state.SetIterationTime(elapsed.count());
     std::error_code ec;
     std::filesystem::remove_all(out_path, ec);
-    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_start);
+    mem.EndIteration();
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
   state.counters["backend"] = 1.0; // 1 = raw trx-cpp
   state.counters["positions_dtype"] = 16.0;
-  state.counters["max_rss_kb"] = max_rss_delta_kb;
+  mem.PublishCounters(state);
 }
 
 static void BM_Itk_QueryAabb(benchmark::State &state) {
   const size_t streamlines = static_cast<size_t>(state.range(0));
-  if (streamlines > g_reference_streamline_count) {
-    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+  if (!ValidateStreamlineCount(state, streamlines)) {
     return;
   }
   const auto &dataset = get_itk_subset(streamlines);
   static const auto slabs = build_slabs_lps();
-  const size_t max_query_streamlines = parse_env_size("TRX_BENCH_MAX_QUERY_STREAMLINES", 0);
+  const size_t max_query_streamlines = resolve_query_streamline_cap();
 
-  double max_rss_delta_kb = 0.0;
+  RuntimeMemoryStats mem;
   for (auto _ : state) {
-    const double rss_start = get_current_rss_kb();
+    mem.BeginIteration();
     std::vector<double> slab_times_ms;
     slab_times_ms.reserve(kSlabCount);
+    std::vector<size_t> slab_counts;
+    slab_counts.reserve(kSlabCount);
     const auto start = std::chrono::steady_clock::now();
     size_t total = 0;
     for (size_t i = 0; i < slabs.size(); ++i) {
@@ -466,21 +564,16 @@ static void BM_Itk_QueryAabb(benchmark::State &state) {
       const auto q_end = std::chrono::steady_clock::now();
       const std::chrono::duration<double, std::milli> q_elapsed = q_end - q_start;
       slab_times_ms.push_back(q_elapsed.count());
-      total += subset->GetNumberOfStreamlines();
+      const size_t count = subset->GetNumberOfStreamlines();
+      slab_counts.push_back(count);
+      total += count;
     }
     const auto end = std::chrono::steady_clock::now();
     const std::chrono::duration<double> elapsed = end - start;
     state.SetIterationTime(elapsed.count());
     benchmark::DoNotOptimize(total);
-
-    auto sorted = slab_times_ms;
-    std::sort(sorted.begin(), sorted.end());
-    const auto p50 = sorted[sorted.size() / 2];
-    const auto p95_idx = static_cast<size_t>(std::ceil(0.95 * sorted.size())) - 1;
-    const auto p95 = sorted[std::min(p95_idx, sorted.size() - 1)];
-    state.counters["query_p50_ms"] = p50;
-    state.counters["query_p95_ms"] = p95;
-    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_start);
+    PublishQueryCounters(state, slab_times_ms, slab_counts, total);
+    mem.EndIteration();
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
@@ -489,24 +582,25 @@ static void BM_Itk_QueryAabb(benchmark::State &state) {
   state.counters["max_query_streamlines"] = static_cast<double>(max_query_streamlines);
   state.counters["slab_thickness_mm"] = kSlabThicknessMm;
   state.counters["positions_dtype"] = 16.0;
-  state.counters["max_rss_kb"] = max_rss_delta_kb;
+  mem.PublishCounters(state);
 }
 
 static void BM_Raw_QueryAabb(benchmark::State &state) {
   const size_t streamlines = static_cast<size_t>(state.range(0));
-  if (streamlines > g_reference_streamline_count) {
-    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+  if (!ValidateStreamlineCount(state, streamlines)) {
     return;
   }
   const auto &dataset = get_raw_subset(streamlines);
   static const auto slabs = build_slabs_ras();
-  const size_t max_query_streamlines = parse_env_size("TRX_BENCH_MAX_QUERY_STREAMLINES", 500);
+  const size_t max_query_streamlines = resolve_query_streamline_cap();
 
-  double max_rss_delta_kb = 0.0;
+  RuntimeMemoryStats mem;
   for (auto _ : state) {
-    const double rss_start = get_current_rss_kb();
+    mem.BeginIteration();
     std::vector<double> slab_times_ms;
     slab_times_ms.reserve(kSlabCount);
+    std::vector<size_t> slab_counts;
+    slab_counts.reserve(kSlabCount);
     const auto start = std::chrono::steady_clock::now();
     size_t total = 0;
     for (size_t i = 0; i < slabs.size(); ++i) {
@@ -518,22 +612,17 @@ static void BM_Raw_QueryAabb(benchmark::State &state) {
       const auto q_end = std::chrono::steady_clock::now();
       const std::chrono::duration<double, std::milli> q_elapsed = q_end - q_start;
       slab_times_ms.push_back(q_elapsed.count());
-      total += subset->num_streamlines();
+      const size_t count = subset->num_streamlines();
+      slab_counts.push_back(count);
+      total += count;
       subset->close();
     }
     const auto end = std::chrono::steady_clock::now();
     const std::chrono::duration<double> elapsed = end - start;
     state.SetIterationTime(elapsed.count());
     benchmark::DoNotOptimize(total);
-
-    auto sorted = slab_times_ms;
-    std::sort(sorted.begin(), sorted.end());
-    const auto p50 = sorted[sorted.size() / 2];
-    const auto p95_idx = static_cast<size_t>(std::ceil(0.95 * sorted.size())) - 1;
-    const auto p95 = sorted[std::min(p95_idx, sorted.size() - 1)];
-    state.counters["query_p50_ms"] = p50;
-    state.counters["query_p95_ms"] = p95;
-    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_start);
+    PublishQueryCounters(state, slab_times_ms, slab_counts, total);
+    mem.EndIteration();
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
@@ -542,7 +631,7 @@ static void BM_Raw_QueryAabb(benchmark::State &state) {
   state.counters["max_query_streamlines"] = static_cast<double>(max_query_streamlines);
   state.counters["slab_thickness_mm"] = kSlabThicknessMm;
   state.counters["positions_dtype"] = 16.0;
-  state.counters["max_rss_kb"] = max_rss_delta_kb;
+  mem.PublishCounters(state);
 }
 
 static void ApplyTranslateArgs(benchmark::internal::Benchmark *bench) {
@@ -599,20 +688,19 @@ static void BM_Parcellate(benchmark::State &state) {
     state.SkipWithMessage("skipped: no parcellation files specified (use --bench-data-dir)");
     return;
   }
-  if (streamlines > g_reference_streamline_count) {
-    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+  if (!ValidateStreamlineCount(state, streamlines)) {
     return;
   }
 
   const auto &dataset = get_itk_subset(streamlines);
   const std::string subset_input_path = get_subset_trx_artifact(streamlines);
 
-  double max_rss_delta_kb = 0.0;
+  RuntimeMemoryStats mem;
   double max_output_file_bytes = 0.0;
   double max_pre_group_file_bytes = 0.0;
   double max_group_overhead_bytes = 0.0;
   for (auto _ : state) {
-    const double rss_start = get_current_rss_kb();
+    mem.BeginIteration();
     const auto start = std::chrono::steady_clock::now();
 
     const std::string out_path = make_temp_path("parcellate");
@@ -647,13 +735,13 @@ static void BM_Parcellate(benchmark::State &state) {
 
     std::error_code ec;
     std::filesystem::remove_all(out_path, ec);
-    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_start);
+    mem.EndIteration();
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
   state.counters["atlases"] = static_cast<double>(g_parcellations.size());
   state.counters["dilation_radius"] = static_cast<double>(dilation);
-  state.counters["max_rss_kb"] = max_rss_delta_kb;
+  mem.PublishCounters(state);
   state.counters["pre_group_file_bytes"] = max_pre_group_file_bytes;
   state.counters["group_overhead_bytes"] = max_group_overhead_bytes;
   state.counters["output_file_bytes"] = max_output_file_bytes;
@@ -663,8 +751,7 @@ static void BM_Parcellate(benchmark::State &state) {
 // state.range(0) = number of streamlines.
 static void BM_GroupTdi(benchmark::State &state) {
   const size_t streamlines = static_cast<size_t>(state.range(0));
-  if (streamlines > g_reference_streamline_count) {
-    state.SkipWithMessage("skipped: streamlines exceeds reference file count");
+  if (!ValidateStreamlineCount(state, streamlines)) {
     return;
   }
   if (g_parcellations.empty()) {
@@ -676,10 +763,10 @@ static void BM_GroupTdi(benchmark::State &state) {
   const std::string reference_nifti = g_parcellations.front().niftiPath;
   const size_t group_streamlines = build_bench_group_members(streamlines).size();
 
-  double max_rss_delta_kb = 0.0;
+  RuntimeMemoryStats mem;
   double max_nonzero_voxels = 0.0;
   for (auto _ : state) {
-    const double rss_start = get_current_rss_kb();
+    mem.BeginIteration();
     const auto start = std::chrono::steady_clock::now();
 
     auto mapper = itk::TrxGroupTdiMapper::New();
@@ -710,20 +797,22 @@ static void BM_GroupTdi(benchmark::State &state) {
     const auto end = std::chrono::steady_clock::now();
     const std::chrono::duration<double> elapsed = end - start;
     state.SetIterationTime(elapsed.count());
-    max_rss_delta_kb = std::max(max_rss_delta_kb, get_current_rss_kb() - rss_start);
+    mem.EndIteration();
   }
 
   state.counters["streamlines"] = static_cast<double>(streamlines);
   state.counters["group_streamlines"] = static_cast<double>(group_streamlines);
   state.counters["nonzero_voxels"] = max_nonzero_voxels;
-  state.counters["max_rss_kb"] = max_rss_delta_kb;
+  mem.PublishCounters(state);
 }
 
 static void ApplyParcellateArgs(benchmark::internal::Benchmark *bench) {
   const auto counts = streamlines_for_benchmarks();
-  // dilation radius 0 (no dilation) only — add more rows for additional radii.
+  const std::array<int64_t, 3> dilations{0, 1, 2};
   for (const auto count : counts) {
-    bench->Args({static_cast<int64_t>(count), 0});
+    for (const auto dilation : dilations) {
+      bench->Args({static_cast<int64_t>(count), dilation});
+    }
   }
   bench->Iterations(1);
 }

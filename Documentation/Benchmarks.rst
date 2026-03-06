@@ -2,13 +2,15 @@ Benchmarks
 ==========
 
 TractographyTRX includes a benchmark suite that mirrors the ``trx-cpp`` real-data
-benchmarks (excluding file size) so ITK wrapper performance can be compared with
-raw ``trx-cpp`` access. The suite focuses on:
+benchmarks and extends them with ITK-specific workloads. The suite focuses on:
 
 * Translate + stream write: read streamlines, apply a +1 mm translation, and
   stream the result to a new TRX file.
 * Spatial slab queries: issue 20 AABB slab queries to emulate interactive
   slicing.
+* Atlas parcellation: assign streamlines to TRX groups with
+  ``TrxParcellationLabeler``.
+* Group TDI mapping: produce a density image for a selected TRX group.
 
 Data
 ----
@@ -37,12 +39,15 @@ fetched automatically by default.
 Run the benchmarks
 ------------------
 
-The helper script mirrors ``trx-cpp``'s flow and writes JSON output for plots:
+The helper script writes JSON output for plots and accepts explicit fairness
+controls:
 
 .. code-block:: bash
 
   bash bench/run_benchmarks.sh \
     --reference /path/to/reference.trx \
+    --bench-data-dir /path/to/bench-data \
+    --query-cap 500 \
     --out-dir bench/results
 
 The benchmark binary also supports ``--reference-trx`` directly:
@@ -57,17 +62,18 @@ The benchmark binary also supports ``--reference-trx`` directly:
 Plot benchmark results
 ----------------------
 
-An R plotting helper adapted from ``trx-cpp`` is provided at
+An R plotting helper is provided at
 ``bench/plot_bench.R``. It reads benchmark JSON output and generates PNG plots
-for translate/write runtime + RSS, AABB query runtime + p50/p95, and
-parcellation runtime + RSS + output TRX size (when ``BM_Parcellate`` rows are
-present).
+for translate/write runtime + RSS, AABB query runtime + p50/p95, parcellation
+runtime + storage overhead, and Group TDI runtime + RSS (when rows are present).
 
 .. code-block:: bash
 
   Rscript bench/plot_bench.R \
-    --bench-dir bench/results \
-    --out-dir bench/results/plots
+    --bench-dir bench/results/publication \
+    --out-dir bench/results/plots \
+    --run-type iteration \
+    --strict TRUE
 
 Required R packages:
 
@@ -86,12 +92,14 @@ Environment variables
 * ``TRX_BENCH_ONLY_STREAMLINES``: run a single streamline count
 * ``TRX_BENCH_LOG_PROGRESS_EVERY``: emit progress every N streamlines
 * ``TRX_BENCH_CHUNK_BYTES``: buffer size for ITK streaming writes
-* ``TRX_BENCH_MAX_QUERY_STREAMLINES``: cap raw ``trx-cpp`` query results
+* ``TRX_BENCH_MAX_QUERY_STREAMLINES``: cap AABB query results (publication runs
+  should use a positive value shared across backends)
 
 Notes on comparison
 -------------------
 
-* The ITK ``QueryAabb`` wrapper does not currently expose a max-streamline
-  sampling cap, so the ITK benchmark always returns the full intersecting set.
-  For closer comparison, set ``TRX_BENCH_MAX_QUERY_STREAMLINES=0`` when running
-  the raw ``trx-cpp`` benchmark to disable sampling.
+* Publication runs should always use capped query results for both backends.
+  The recommended setting is ``TRX_BENCH_MAX_QUERY_STREAMLINES=500`` to match
+  interactive viewer behavior.
+* ``run_benchmarks.sh`` now enforces a positive cap; zero/uncapped query runs
+  are not used for manuscript figures.

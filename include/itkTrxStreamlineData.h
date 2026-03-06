@@ -333,6 +333,10 @@ public:
   TrxGroup::Pointer
   GetGroup(const std::string & name) const;
 
+  /** Number of streamlines in a named group, or 0 if not found. */
+  SizeValueType
+  GetGroupStreamlineCount(const std::string & name) const;
+
   // -----------------------------------------------------------------------
   // DPS / DPV field enumeration
   // -----------------------------------------------------------------------

@@ -31,7 +31,7 @@ void
 PrintUsage(const char * exe)
 {
   std::cerr << "Usage:\n"
-            << "  " << exe << " --input <tractogram.trx_or_dir>\n";
+            << "  " << exe << " --input <tractogram.trx_or_dir> [--verbose-fields]\n";
 }
 
 const char *
@@ -84,11 +84,20 @@ PrintMatrix4x4(const itk::TrxStreamlineData::MatrixType & mat)
 }
 
 void
-PrintDpsSummary(const itk::TrxStreamlineData * data)
+PrintDpsSummary(const itk::TrxStreamlineData * data, bool verboseFields)
 {
   const auto dpsNames = data->GetDpsFieldNames();
-  const auto nStreamlines = static_cast<size_t>(data->GetNumberOfStreamlines());
   std::cout << "DPS fields (" << dpsNames.size() << "):\n";
+  if (!verboseFields)
+  {
+    for (const auto & name : dpsNames)
+    {
+      std::cout << "  - " << name << "\n";
+    }
+    return;
+  }
+
+  const auto nStreamlines = static_cast<size_t>(data->GetNumberOfStreamlines());
   for (const auto & name : dpsNames)
   {
     const auto values = data->GetDpsField(name);
@@ -107,11 +116,20 @@ PrintDpsSummary(const itk::TrxStreamlineData * data)
 }
 
 void
-PrintDpvSummary(const itk::TrxStreamlineData * data)
+PrintDpvSummary(const itk::TrxStreamlineData * data, bool verboseFields)
 {
   const auto dpvNames = data->GetDpvFieldNames();
-  const auto nVertices = static_cast<size_t>(data->GetNumberOfVertices());
   std::cout << "DPV fields (" << dpvNames.size() << "):\n";
+  if (!verboseFields)
+  {
+    for (const auto & name : dpvNames)
+    {
+      std::cout << "  - " << name << "\n";
+    }
+    return;
+  }
+
+  const auto nVertices = static_cast<size_t>(data->GetNumberOfVertices());
   for (const auto & name : dpvNames)
   {
     const auto values = data->GetDpvField(name);
@@ -136,8 +154,7 @@ PrintGroupSummary(const itk::TrxStreamlineData * data)
   std::cout << "Groups (" << groupNames.size() << "):\n";
   for (const auto & name : groupNames)
   {
-    auto group = data->GetGroup(name);
-    const size_t count = group ? group->GetStreamlineIndices().size() : 0;
+    const size_t count = static_cast<size_t>(data->GetGroupStreamlineCount(name));
     std::cout << "  - " << name << ": " << count << " streamlines\n";
   }
 }
@@ -147,6 +164,7 @@ int
 main(int argc, char * argv[])
 {
   std::string inputPath;
+  bool        verboseFields = false;
   for (int i = 1; i < argc; ++i)
   {
     const std::string arg = argv[i];
@@ -163,6 +181,10 @@ main(int argc, char * argv[])
         return EXIT_FAILURE;
       }
       inputPath = argv[++i];
+    }
+    else if (arg == "--verbose-fields")
+    {
+      verboseFields = true;
     }
     else
     {
@@ -218,8 +240,8 @@ main(int argc, char * argv[])
     }
 
     std::cout << "\n";
-    PrintDpsSummary(data);
-    PrintDpvSummary(data);
+    PrintDpsSummary(data, verboseFields);
+    PrintDpvSummary(data, verboseFields);
     PrintGroupSummary(data);
   }
   catch (const itk::ExceptionObject & e)
