@@ -19,8 +19,10 @@
 #include "itkImage.h"
 #include "itkImageFileWriter.h"
 #include "itkNiftiImageIO.h"
+#include "itkMath.h"
 #include "itkTrxGroupTdiMapper.h"
 #include "itkTrxStreamWriter.h"
+#include "itkContinuousIndex.h"
 
 #include "itksys/SystemTools.hxx"
 
@@ -31,6 +33,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <array>
 
 namespace
 {
@@ -169,6 +172,278 @@ inline size_t
 Flatten(size_t i, size_t j, size_t k, size_t nx, size_t ny)
 {
   return i + nx * (j + ny * k);
+}
+
+struct LpsToVoxelState
+{
+  std::array<double, 9> M{};
+  std::array<double, 3> origin{};
+  itk::Index<3>         bufferStart{};
+  itk::Size<3>          bufferSize{};
+};
+
+struct RasToVoxelState
+{
+  std::array<double, 9> LpsM{};
+  std::array<double, 3> origin{};
+  itk::Index<3>         bufferStart{};
+  itk::Size<3>          bufferSize{};
+};
+
+LpsToVoxelState
+BuildLpsToVoxelState(const ImageType * image)
+{
+  LpsToVoxelState state;
+  const auto buffered = image->GetBufferedRegion();
+  state.bufferStart = buffered.GetIndex();
+  state.bufferSize = buffered.GetSize();
+  const auto & invDir = image->GetInverseDirection();
+  const auto & spacing = image->GetSpacing();
+  const auto & origin = image->GetOrigin();
+  for (int r = 0; r < 3; ++r)
+  {
+    for (int c = 0; c < 3; ++c)
+    {
+      state.M[static_cast<size_t>(r * 3 + c)] = invDir(r, c) / spacing[r];
+    }
+    state.origin[static_cast<size_t>(r)] = origin[r];
+  }
+  return state;
+}
+
+RasToVoxelState
+BuildRasToVoxelState(const ImageType * image)
+{
+  RasToVoxelState state;
+  const auto buffered = image->GetBufferedRegion();
+  state.bufferStart = buffered.GetIndex();
+  state.bufferSize = buffered.GetSize();
+
+  const auto & invDir = image->GetInverseDirection();
+  const auto & spacing = image->GetSpacing();
+  const auto & origin = image->GetOrigin();
+  for (int r = 0; r < 3; ++r)
+  {
+    for (int c = 0; c < 3; ++c)
+    {
+      state.LpsM[static_cast<size_t>(r * 3 + c)] = invDir(r, c) / spacing[r];
+    }
+    state.origin[static_cast<size_t>(r)] = origin[r];
+  }
+  return state;
+}
+
+bool
+PhysicalPointToIndexLikeParcellation(const LpsToVoxelState & state,
+                                     const ImageType::PointType & pointLps,
+                                     ImageType::IndexType & index)
+{
+  using IndexValueType = ImageType::IndexType::IndexValueType;
+  const double dx = pointLps[0] - state.origin[0];
+  const double dy = pointLps[1] - state.origin[1];
+  const double dz = pointLps[2] - state.origin[2];
+  const int i = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(state.M[0] * dx + state.M[1] * dy + state.M[2] * dz));
+  const int j = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(state.M[3] * dx + state.M[4] * dy + state.M[5] * dz));
+  const int k = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(state.M[6] * dx + state.M[7] * dy + state.M[8] * dz));
+  index[0] = i;
+  index[1] = j;
+  index[2] = k;
+  const int startI = state.bufferStart[0];
+  const int startJ = state.bufferStart[1];
+  const int startK = state.bufferStart[2];
+  const int endI = startI + static_cast<int>(state.bufferSize[0]);
+  const int endJ = startJ + static_cast<int>(state.bufferSize[1]);
+  const int endK = startK + static_cast<int>(state.bufferSize[2]);
+  return (i >= startI && i < endI && j >= startJ && j < endJ && k >= startK && k < endK);
+}
+
+bool
+RasPointToIndexLikeGroupTdi(const RasToVoxelState & state,
+                            const std::array<double, 3> & pointRas,
+                            ImageType::IndexType & index)
+{
+  using IndexValueType = ImageType::IndexType::IndexValueType;
+  const double lx = -pointRas[0];
+  const double ly = -pointRas[1];
+  const double lz = pointRas[2];
+  const double dx = lx - state.origin[0];
+  const double dy = ly - state.origin[1];
+  const double dz = lz - state.origin[2];
+  const double fi = state.LpsM[0] * dx + state.LpsM[1] * dy + state.LpsM[2] * dz;
+  const double fj = state.LpsM[3] * dx + state.LpsM[4] * dy + state.LpsM[5] * dz;
+  const double fk = state.LpsM[6] * dx + state.LpsM[7] * dy + state.LpsM[8] * dz;
+  const int i = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fi));
+  const int j = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fj));
+  const int k = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fk));
+  index[0] = i;
+  index[1] = j;
+  index[2] = k;
+  const int startI = state.bufferStart[0];
+  const int startJ = state.bufferStart[1];
+  const int startK = state.bufferStart[2];
+  const int endI = startI + static_cast<int>(state.bufferSize[0]);
+  const int endJ = startJ + static_cast<int>(state.bufferSize[1]);
+  const int endK = startK + static_cast<int>(state.bufferSize[2]);
+  return (i >= startI && i < endI && j >= startJ && j < endJ && k >= startK && k < endK);
+}
+
+bool
+RunPointToIndexParityAssertions()
+{
+  using ContinuousIndexType = itk::ContinuousIndex<double, 3>;
+  auto MakeContinuousIndex = [](double x, double y, double z) {
+    ContinuousIndexType ci;
+    ci[0] = x;
+    ci[1] = y;
+    ci[2] = z;
+    return ci;
+  };
+
+  ImageType::IndexType start;
+  start[0] = -4;
+  start[1] = 3;
+  start[2] = -2;
+  ImageType::SizeType size;
+  size[0] = 17;
+  size[1] = 19;
+  size[2] = 23;
+  ImageType::RegionType region(start, size);
+
+  auto image = ImageType::New();
+  image->SetRegions(region);
+  image->Allocate(true);
+
+  ImageType::SpacingType spacing;
+  spacing[0] = 1.3;
+  spacing[1] = 0.9;
+  spacing[2] = 2.1;
+  image->SetSpacing(spacing);
+
+  ImageType::PointType origin;
+  origin[0] = -24.0;
+  origin[1] = 7.5;
+  origin[2] = 11.0;
+  image->SetOrigin(origin);
+
+  const double ax = 0.35;
+  const double ay = -0.40;
+  const double az = 0.25;
+  const double cx = std::cos(ax), sx = std::sin(ax);
+  const double cy = std::cos(ay), sy = std::sin(ay);
+  const double cz = std::cos(az), sz = std::sin(az);
+
+  ImageType::DirectionType dir;
+  dir(0, 0) = cz * cy;
+  dir(0, 1) = cz * sy * sx - sz * cx;
+  dir(0, 2) = cz * sy * cx + sz * sx;
+  dir(1, 0) = sz * cy;
+  dir(1, 1) = sz * sy * sx + cz * cx;
+  dir(1, 2) = sz * sy * cx - cz * sx;
+  dir(2, 0) = -sy;
+  dir(2, 1) = cy * sx;
+  dir(2, 2) = cy * cx;
+  image->SetDirection(dir);
+
+  const auto lpsState = BuildLpsToVoxelState(image);
+  const auto rasState = BuildRasToVoxelState(image);
+
+  // Keep tilted-FOV parity points away from exact half-integer boundaries
+  // to avoid fragile compiler-dependent ties after round-trip transforms.
+  std::vector<ContinuousIndexType> cis = {
+    MakeContinuousIndex(-0.5001, 3.25, 4.75),
+    MakeContinuousIndex(-0.4999, 3.25, 4.75),
+    MakeContinuousIndex(2.5001, 5.5001, 7.5001),
+    MakeContinuousIndex(6.2, 8.8, 1.1),
+    MakeContinuousIndex(16.49, 18.49, 22.49),
+    MakeContinuousIndex(16.499, 18.499, 22.499),
+    MakeContinuousIndex(-1.49, 4.2, 6.9),
+    MakeContinuousIndex(7.5001, -0.5001, 10.5001)
+  };
+
+  for (const auto & ci : cis)
+  {
+    ImageType::PointType pLps;
+    image->TransformContinuousIndexToPhysicalPoint(ci, pLps);
+
+    ImageType::IndexType itkIndex;
+    const bool itkInside = image->TransformPhysicalPointToIndex(pLps, itkIndex);
+
+    ImageType::IndexType parIndex;
+    const bool parInside = PhysicalPointToIndexLikeParcellation(lpsState, pLps, parIndex);
+    const bool itkInBuffered = itkInside && image->GetBufferedRegion().IsInside(itkIndex);
+    if (itkInBuffered != parInside || (itkInBuffered && parIndex != itkIndex))
+    {
+      std::cerr << "FAIL: parcellation-style mapping mismatch for CI=(" << ci[0] << ", " << ci[1] << ", " << ci[2]
+                << ").\n";
+      return false;
+    }
+
+    std::array<double, 3> pRas = { -pLps[0], -pLps[1], pLps[2] };
+    ImageType::IndexType rasIndex;
+    const bool rasInside = RasPointToIndexLikeGroupTdi(rasState, pRas, rasIndex);
+    if (itkInBuffered != rasInside || (itkInBuffered && rasIndex != itkIndex))
+    {
+      std::cerr << "FAIL: RAS-style mapping mismatch for CI=(" << ci[0] << ", " << ci[1] << ", " << ci[2] << ").\n";
+      return false;
+    }
+  }
+
+  // Separate tie-boundary check on axis-aligned geometry where -0.5 maps
+  // exactly and deterministically to validate ITK half-up behavior.
+  auto axisImage = ImageType::New();
+  ImageType::IndexType axisStart;
+  axisStart.Fill(0);
+  ImageType::SizeType axisSize;
+  axisSize.Fill(16);
+  axisImage->SetRegions(ImageType::RegionType(axisStart, axisSize));
+  axisImage->Allocate(true);
+  ImageType::SpacingType axisSpacing;
+  axisSpacing.Fill(1.0);
+  axisImage->SetSpacing(axisSpacing);
+  ImageType::PointType axisOrigin;
+  axisOrigin.Fill(0.0);
+  axisImage->SetOrigin(axisOrigin);
+  ImageType::DirectionType axisDir;
+  axisDir.SetIdentity();
+  axisImage->SetDirection(axisDir);
+  const auto axisLpsState = BuildLpsToVoxelState(axisImage);
+  const auto axisRasState = BuildRasToVoxelState(axisImage);
+
+  std::vector<ContinuousIndexType> tieCis = {
+    MakeContinuousIndex(-0.5, 3.25, 4.75),
+    MakeContinuousIndex(-0.5000001, 3.25, 4.75),
+    MakeContinuousIndex(-0.4999999, 3.25, 4.75),
+    MakeContinuousIndex(7.5, 8.5, 9.5)
+  };
+
+  for (const auto & ci : tieCis)
+  {
+    ImageType::PointType pLps;
+    axisImage->TransformContinuousIndexToPhysicalPoint(ci, pLps);
+
+    const ImageType::IndexType itkIndex = axisImage->TransformPhysicalPointToIndex(pLps);
+    const bool itkInBuffered = axisImage->GetBufferedRegion().IsInside(itkIndex);
+
+    ImageType::IndexType parIndex;
+    const bool parInside = PhysicalPointToIndexLikeParcellation(axisLpsState, pLps, parIndex);
+    if (itkInBuffered != parInside || (itkInBuffered && parIndex != itkIndex))
+    {
+      std::cerr << "FAIL: axis parcellation-style mismatch for CI=(" << ci[0] << ", " << ci[1] << ", " << ci[2]
+                << ").\n";
+      return false;
+    }
+
+    std::array<double, 3> pRas = { -pLps[0], -pLps[1], pLps[2] };
+    ImageType::IndexType rasIndex;
+    const bool rasInside = RasPointToIndexLikeGroupTdi(axisRasState, pRas, rasIndex);
+    if (itkInBuffered != rasInside || (itkInBuffered && rasIndex != itkIndex))
+    {
+      std::cerr << "FAIL: axis RAS-style mismatch for CI=(" << ci[0] << ", " << ci[1] << ", " << ci[2] << ").\n";
+      return false;
+    }
+  }
+
+  return true;
 }
 
 bool
@@ -445,6 +720,10 @@ itkTrxGroupTdiMapperTest(int argc, char * argv[])
     return EXIT_FAILURE;
   }
   if (!RunEmptySelectedIdsAssertions(trxPath, referencePath))
+  {
+    return EXIT_FAILURE;
+  }
+  if (!RunPointToIndexParityAssertions())
   {
     return EXIT_FAILURE;
   }

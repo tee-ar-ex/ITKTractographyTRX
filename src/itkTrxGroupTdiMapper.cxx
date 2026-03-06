@@ -40,47 +40,31 @@ using RefImageType = TrxGroupTdiMapper::OutputImageType;
 
 struct RasToVoxelState
 {
-  std::array<double, 9> M{};
-  std::array<double, 3> b{};
-  itk::Size<3>          dims{};
+  std::array<double, 9> LpsM{};
+  std::array<double, 3> origin{};
+  itk::Index<3>         bufferStart{};
+  itk::Size<3>          bufferSize{};
 };
 
 RasToVoxelState
 BuildRasToVoxelState(const RefImageType * image)
 {
   RasToVoxelState state;
-  state.dims = image->GetLargestPossibleRegion().GetSize();
+  const auto buffered = image->GetBufferedRegion();
+  state.bufferStart = buffered.GetIndex();
+  state.bufferSize = buffered.GetSize();
 
   const auto & invDir = image->GetInverseDirection();
   const auto & spacing = image->GetSpacing();
   const auto & origin = image->GetOrigin();
 
-  // ITK image geometry is LPS. Build lps->voxel, then compose with
-  // ras->lps = diag(-1,-1,1) so mapping runs directly on TRX-native RAS points.
-  const double lpsToVoxel[9] = { invDir(0, 0) / spacing[0],
-                                 invDir(0, 1) / spacing[0],
-                                 invDir(0, 2) / spacing[0],
-                                 invDir(1, 0) / spacing[1],
-                                 invDir(1, 1) / spacing[1],
-                                 invDir(1, 2) / spacing[1],
-                                 invDir(2, 0) / spacing[2],
-                                 invDir(2, 1) / spacing[2],
-                                 invDir(2, 2) / spacing[2] };
-  const double rasToLps[9] = { -1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 1.0 };
-
   for (int r = 0; r < 3; ++r)
   {
     for (int c = 0; c < 3; ++c)
     {
-      double sum = 0.0;
-      for (int k = 0; k < 3; ++k)
-      {
-        sum += lpsToVoxel[r * 3 + k] * rasToLps[k * 3 + c];
-      }
-      state.M[static_cast<size_t>(r * 3 + c)] = sum;
+      state.LpsM[static_cast<size_t>(r * 3 + c)] = invDir(r, c) / spacing[r];
     }
-    state.b[static_cast<size_t>(r)] = -(lpsToVoxel[r * 3 + 0] * origin[0] + lpsToVoxel[r * 3 + 1] * origin[1] +
-                                        lpsToVoxel[r * 3 + 2] * origin[2]);
+    state.origin[static_cast<size_t>(r)] = origin[r];
   }
   return state;
 }
@@ -88,16 +72,29 @@ BuildRasToVoxelState(const RefImageType * image)
 inline bool
 RasPointToIndex(const RasToVoxelState & state, double rx, double ry, double rz, int & i, int & j, int & k)
 {
-  const double fi = state.M[0] * rx + state.M[1] * ry + state.M[2] * rz + state.b[0];
-  const double fj = state.M[3] * rx + state.M[4] * ry + state.M[5] * rz + state.b[1];
-  const double fk = state.M[6] * rx + state.M[7] * ry + state.M[8] * rz + state.b[2];
+  using IndexValueType = RefImageType::IndexType::IndexValueType;
+  const double lx = -rx;
+  const double ly = -ry;
+  const double lz = rz;
+  const double dx = lx - state.origin[0];
+  const double dy = ly - state.origin[1];
+  const double dz = lz - state.origin[2];
+  const double fi = state.LpsM[0] * dx + state.LpsM[1] * dy + state.LpsM[2] * dz;
+  const double fj = state.LpsM[3] * dx + state.LpsM[4] * dy + state.LpsM[5] * dz;
+  const double fk = state.LpsM[6] * dx + state.LpsM[7] * dy + state.LpsM[8] * dz;
 
-  i = static_cast<int>(std::round(fi));
-  j = static_cast<int>(std::round(fj));
-  k = static_cast<int>(std::round(fk));
+  i = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fi));
+  j = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fj));
+  k = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(fk));
 
-  return (i >= 0 && i < static_cast<int>(state.dims[0]) && j >= 0 && j < static_cast<int>(state.dims[1]) && k >= 0 &&
-          k < static_cast<int>(state.dims[2]));
+  const int startI = state.bufferStart[0];
+  const int startJ = state.bufferStart[1];
+  const int startK = state.bufferStart[2];
+  const int endI = startI + static_cast<int>(state.bufferSize[0]);
+  const int endJ = startJ + static_cast<int>(state.bufferSize[1]);
+  const int endK = startK + static_cast<int>(state.bufferSize[2]);
+
+  return (i >= startI && i < endI && j >= startJ && j < endJ && k >= startK && k < endK);
 }
 } // namespace
 
@@ -239,10 +236,12 @@ TrxGroupTdiMapper::Update()
   m_Output->SetRegions(ref->GetLargestPossibleRegion());
   m_Output->Allocate(true);
 
-  const auto dims = ref->GetLargestPossibleRegion().GetSize();
-  const size_t nx = dims[0];
-  const size_t ny = dims[1];
-  const size_t nz = dims[2];
+  const auto outRegion = m_Output->GetBufferedRegion();
+  const auto outStart = outRegion.GetIndex();
+  const auto outSize = outRegion.GetSize();
+  const size_t nx = outSize[0];
+  const size_t ny = outSize[1];
+  const size_t nz = outSize[2];
   const size_t nVoxels = nx * ny * nz;
   auto *        outBuffer = m_Output->GetBufferPointer();
   if (!outBuffer)
@@ -385,7 +384,10 @@ TrxGroupTdiMapper::Update()
         {
           continue;
         }
-        const size_t flat = static_cast<size_t>(i) + nx * (static_cast<size_t>(j) + ny * static_cast<size_t>(k));
+        const size_t localI = static_cast<size_t>(i - outStart[0]);
+        const size_t localJ = static_cast<size_t>(j - outStart[1]);
+        const size_t localK = static_cast<size_t>(k - outStart[2]);
+        const size_t flat = localI + nx * (localJ + ny * localK);
         if (!visited.insert(flat).second)
         {
           continue;

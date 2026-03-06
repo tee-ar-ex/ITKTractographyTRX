@@ -24,6 +24,7 @@
 #include "itkGrayscaleDilateImageFilter.h"
 #include "itkImage.h"
 #include "itkImageFileReader.h"
+#include "itkMath.h"
 #include "itkNiftiImageIO.h"
 
 #include "itk_eigen.h"
@@ -129,11 +130,10 @@ DilateLabelImage(LabelImageType::Pointer image, unsigned int radius)
 struct AtlasState
 {
   const int32_t *                     buffer{ nullptr };
-  itk::Size<3>                        dims;
-  // Row-major 3×3 physical-to-index matrix (from image->GetPhysicalPointToIndexMatrix()).
-  // Applied as: ci = M[0..2] · diff, cj = M[3..5] · diff, ck = M[6..8] · diff
-  std::array<double, 9>               M;
-  std::array<double, 3>               origin;
+  itk::Index<3>                       bufferStart;
+  itk::Size<3>                        bufferSize;
+  std::array<double, 9>               M{};
+  std::array<double, 3>               origin{};
   std::map<int32_t, std::string>      labelMap;
   std::string                         prefix;
   // Held here to keep the image buffer alive.
@@ -149,12 +149,11 @@ BuildAtlasState(LabelImageType::Pointer image,
   s.image = image;
   s.labelMap = labelMap;
   s.prefix = prefix;
-  s.dims = image->GetLargestPossibleRegion().GetSize();
+  const auto buffered = image->GetBufferedRegion();
+  s.bufferStart = buffered.GetIndex();
+  s.bufferSize = buffered.GetSize();
   s.buffer = image->GetBufferPointer();
 
-  // Reconstruct physical->index matrix from public ImageBase API for
-  // compatibility across ITK versions:
-  //   index = diag(1/spacing) * inverse(direction) * (point - origin)
   const auto & invDir = image->GetInverseDirection();
   const auto & spacing = image->GetSpacing();
   for (int r = 0; r < 3; ++r)
@@ -177,23 +176,37 @@ BuildAtlasState(LabelImageType::Pointer image,
 inline bool
 PhysicalToIndex(const AtlasState & atlas, double px, double py, double pz, int & i, int & j, int & k)
 {
+  using IndexValueType = LabelImageType::IndexType::IndexValueType;
   const double dx = px - atlas.origin[0];
   const double dy = py - atlas.origin[1];
   const double dz = pz - atlas.origin[2];
-  i = static_cast<int>(std::round(atlas.M[0] * dx + atlas.M[1] * dy + atlas.M[2] * dz));
-  j = static_cast<int>(std::round(atlas.M[3] * dx + atlas.M[4] * dy + atlas.M[5] * dz));
-  k = static_cast<int>(std::round(atlas.M[6] * dx + atlas.M[7] * dy + atlas.M[8] * dz));
-  return (i >= 0 && i < static_cast<int>(atlas.dims[0]) && j >= 0 &&
-          j < static_cast<int>(atlas.dims[1]) && k >= 0 && k < static_cast<int>(atlas.dims[2]));
+  i = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(atlas.M[0] * dx + atlas.M[1] * dy + atlas.M[2] * dz));
+  j = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(atlas.M[3] * dx + atlas.M[4] * dy + atlas.M[5] * dz));
+  k = static_cast<int>(itk::Math::RoundHalfIntegerUp<IndexValueType>(atlas.M[6] * dx + atlas.M[7] * dy + atlas.M[8] * dz));
+
+  const int startI = atlas.bufferStart[0];
+  const int startJ = atlas.bufferStart[1];
+  const int startK = atlas.bufferStart[2];
+  const int endI = startI + static_cast<int>(atlas.bufferSize[0]);
+  const int endJ = startJ + static_cast<int>(atlas.bufferSize[1]);
+  const int endK = startK + static_cast<int>(atlas.bufferSize[2]);
+  if (i < startI || i >= endI || j < startJ || j >= endJ || k < startK || k >= endK)
+  {
+    return false;
+  }
+  return true;
 }
 
 /** Return the label at a validated voxel index (ITK buffer: x varies fastest). */
 inline int32_t
 LabelAt(const AtlasState & atlas, int i, int j, int k)
 {
-  return atlas.buffer[static_cast<size_t>(i) +
-                      static_cast<size_t>(j) * atlas.dims[0] +
-                      static_cast<size_t>(k) * atlas.dims[0] * atlas.dims[1]];
+  const size_t localI = static_cast<size_t>(i - atlas.bufferStart[0]);
+  const size_t localJ = static_cast<size_t>(j - atlas.bufferStart[1]);
+  const size_t localK = static_cast<size_t>(k - atlas.bufferStart[2]);
+  return atlas.buffer[localI +
+                      localJ * atlas.bufferSize[0] +
+                      localK * atlas.bufferSize[0] * atlas.bufferSize[1]];
 }
 
 size_t
