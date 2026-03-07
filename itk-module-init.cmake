@@ -180,27 +180,22 @@ endif()
 
 set(TractographyTRX_EXPORT_CODE_COMMON [=[
 # Restore non-ITK third-party targets for downstream consumers.
-# ITK::TractographyTRX may reference `trx` in its link interface.
-if(NOT TARGET trx)
+# Keep the dependency namespaced (trx-cpp::trx) to avoid exporting a global
+# bare `trx` target from TractographyTRX.
+if(NOT TARGET trx-cpp::trx)
   find_package(trx-cpp QUIET CONFIG)
-  if(TARGET trx-cpp::trx)
-    add_library(trx INTERFACE IMPORTED)
-    set_target_properties(trx PROPERTIES
-      INTERFACE_LINK_LIBRARIES "trx-cpp::trx"
-    )
-  endif()
 endif()
 
 # Fallback for build-tree consumption where only libtrx exists.
-if(NOT TARGET trx)
+if(NOT TARGET trx-cpp::trx)
   find_library(_TractographyTRX_trx_library
     NAMES trx
     PATHS "${ITK_DIR}/lib"
     NO_DEFAULT_PATH
   )
   if(_TractographyTRX_trx_library)
-    add_library(trx UNKNOWN IMPORTED)
-    set_target_properties(trx PROPERTIES
+    add_library(trx-cpp::trx UNKNOWN IMPORTED)
+    set_target_properties(trx-cpp::trx PROPERTIES
       IMPORTED_LOCATION "${_TractographyTRX_trx_library}"
     )
   endif()
