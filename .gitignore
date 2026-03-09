@@ -5,3 +5,4 @@ bench/**/*.json
 !bench/results/bench_trx_itk_realdata.json
 bench/results/plots/**/*.png
 build-*
+.DS_Store

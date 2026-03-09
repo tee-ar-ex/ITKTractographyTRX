@@ -270,7 +270,7 @@ plot_translate_runtime <- function(df, out_dir) {
     ) +
     pub_theme()
 
-  ggsave(file.path(out_dir, "translate_write_runtime.png"), p, width = 9.5, height = 4.8, dpi = 220)
+  ggsave(file.path(out_dir, "translate_write_runtime.svg"), p, width = 9.5, height = 4.8)
 }
 
 plot_translate_rss <- function(df, out_dir) {
@@ -293,7 +293,7 @@ plot_translate_rss <- function(df, out_dir) {
         fill = "Backend"
       ) +
       pub_theme()
-    ggsave(file.path(out_dir, "translate_write_memory_footprint.png"), p_mem, width = 9.5, height = 4.8, dpi = 220)
+    ggsave(file.path(out_dir, "translate_write_memory_footprint.svg"), p_mem, width = 9.5, height = 4.8)
   }
 
   if (nrow(sub_df_rss) > 0) {
@@ -306,7 +306,7 @@ plot_translate_rss <- function(df, out_dir) {
         fill = "Backend"
       ) +
       pub_theme()
-    ggsave(file.path(out_dir, "translate_write_rss.png"), p_rss, width = 9.5, height = 4.8, dpi = 220)
+    ggsave(file.path(out_dir, "translate_write_rss.svg"), p_rss, width = 9.5, height = 4.8)
   }
 }
 
@@ -328,7 +328,7 @@ plot_query_total_runtime <- function(df, out_dir) {
     ) +
     pub_theme()
 
-  ggsave(file.path(out_dir, "query_total_runtime.png"), p, width = 9.5, height = 4.8, dpi = 220)
+  ggsave(file.path(out_dir, "query_total_runtime.svg"), p, width = 9.5, height = 4.8)
 }
 
 plot_query_runtime_distribution <- function(df, out_dir) {
@@ -356,7 +356,7 @@ plot_query_runtime_distribution <- function(df, out_dir) {
     ) +
     pub_theme()
 
-  ggsave(file.path(out_dir, "query_runtime_distribution.png"), p, width = 9.5, height = 6.2, dpi = 220)
+  ggsave(file.path(out_dir, "query_runtime_distribution.svg"), p, width = 9.5, height = 6.2)
 }
 
 parcellation_annotate <- function(df) {
@@ -385,7 +385,7 @@ plot_parcellation_runtime <- function(df, out_dir) {
     ) +
     pub_theme()
 
-  ggsave(file.path(out_dir, "parcellation_runtime.png"), p, width = 9.5, height = 6.0, dpi = 220)
+  ggsave(file.path(out_dir, "parcellation_runtime.svg"), p, width = 9.5, height = 6.0)
 }
 
 plot_parcellation_rss <- function(df, out_dir) {
@@ -409,7 +409,7 @@ plot_parcellation_rss <- function(df, out_dir) {
         color = "Dilation radius"
       ) +
       pub_theme()
-    ggsave(file.path(out_dir, "parcellation_memory_footprint.png"), p_mem, width = 9.5, height = 6.0, dpi = 220)
+    ggsave(file.path(out_dir, "parcellation_memory_footprint.svg"), p_mem, width = 9.5, height = 6.0)
   }
 
   if (nrow(sub_df_rss) > 0) {
@@ -425,7 +425,7 @@ plot_parcellation_rss <- function(df, out_dir) {
         color = "Dilation radius"
       ) +
       pub_theme()
-    ggsave(file.path(out_dir, "parcellation_rss.png"), p_rss, width = 9.5, height = 6.0, dpi = 220)
+    ggsave(file.path(out_dir, "parcellation_rss.svg"), p_rss, width = 9.5, height = 6.0)
   }
 }
 
@@ -452,7 +452,7 @@ plot_parcellation_size <- function(df, out_dir) {
       color = "Stage"
     ) +
     pub_theme()
-  ggsave(file.path(out_dir, "parcellation_size_before_after_groups.png"), p_stage, width = 10.5, height = 6.3, dpi = 220)
+  ggsave(file.path(out_dir, "parcellation_size_before_after_groups.svg"), p_stage, width = 10.5, height = 6.3)
 
   p_delta <- ggplot(sub_df, aes(streamlines_f, delta_mb, color = dilation_label, group = dilation_label)) +
     geom_line(linewidth = 1) +
@@ -465,7 +465,7 @@ plot_parcellation_size <- function(df, out_dir) {
       color = "Dilation radius"
     ) +
     pub_theme()
-  ggsave(file.path(out_dir, "parcellation_group_overhead.png"), p_delta, width = 9.5, height = 6.0, dpi = 220)
+  ggsave(file.path(out_dir, "parcellation_group_overhead.svg"), p_delta, width = 9.5, height = 6.0)
 
   p_out <- ggplot(sub_df, aes(streamlines_f, output_file_mb, color = dilation_label, group = dilation_label)) +
     geom_line(linewidth = 1) +
@@ -478,7 +478,7 @@ plot_parcellation_size <- function(df, out_dir) {
       color = "Dilation radius"
     ) +
     pub_theme()
-  ggsave(file.path(out_dir, "parcellation_output_size.png"), p_out, width = 9.5, height = 6.0, dpi = 220)
+  ggsave(file.path(out_dir, "parcellation_output_size.svg"), p_out, width = 9.5, height = 6.0)
 }
 
 plot_group_tdi <- function(df, out_dir) {
@@ -495,7 +495,7 @@ plot_group_tdi <- function(df, out_dir) {
       y = "Runtime (s, log scale)"
     ) +
     pub_theme()
-  ggsave(file.path(out_dir, "group_tdi_runtime.png"), p_runtime, width = 9.5, height = 4.8, dpi = 220)
+  ggsave(file.path(out_dir, "group_tdi_runtime.svg"), p_runtime, width = 9.5, height = 4.8)
 
   sub_mem <- sub_df %>%
     mutate(memory_peak_gb = dplyr::coalesce(phys_peak_gb, rss_peak_gb)) %>%
@@ -510,7 +510,7 @@ plot_group_tdi <- function(df, out_dir) {
         y = "Peak memory footprint (GiB)"
       ) +
       pub_theme()
-    ggsave(file.path(out_dir, "group_tdi_memory_footprint.png"), p_mem, width = 9.5, height = 4.8, dpi = 220)
+    ggsave(file.path(out_dir, "group_tdi_memory_footprint.svg"), p_mem, width = 9.5, height = 4.8)
   }
 
   sub_rss <- sub_df %>% filter(!is.na(rss_peak_gb))
@@ -524,7 +524,7 @@ plot_group_tdi <- function(df, out_dir) {
         y = "Peak RSS (GiB)"
       ) +
       pub_theme()
-    ggsave(file.path(out_dir, "group_tdi_rss.png"), p_rss, width = 9.5, height = 4.8, dpi = 220)
+    ggsave(file.path(out_dir, "group_tdi_rss.svg"), p_rss, width = 9.5, height = 4.8)
   }
 }
 
