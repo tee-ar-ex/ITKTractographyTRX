@@ -10,7 +10,7 @@ Prerequisites
 - ``trx-cpp`` is vendored and fetched automatically; no separate installation is needed
 
 Building as an ITK Remote Module
----------------------------------
+--------------------------------
 
 To build TractographyTRX as part of ITK, enable the module when configuring
 ITK:
@@ -38,7 +38,7 @@ If ITK is already installed, TractographyTRX can be built against it directly:
 
 
 Verifying the Installation
----------------------------
+--------------------------
 
 After building, run the test suite to confirm everything works:
 

@@ -1,13 +1,11 @@
 Command-Line Tools
 ==================
 
-Four command-line tools are provided in the ``examples/`` directory and built
-as part of the module. In the Pixi manuscript workflow, build them with
-``pixi run -e cxx build-examples``; the binaries land in
-``build/ITK-build/bin``.
+Four command-line tools are provided in the ``examples/`` directory.
+They are build when CMake is run with example building enabled.
 
 ``trx_info`` — Inspect a tractogram
--------------------------------------
+-----------------------------------
 
 Prints a concise summary of a TRX file: streamline and vertex counts,
 coordinate dtype and system, voxel-to-RAS affine, and all DPS, DPV, and group
@@ -39,7 +37,7 @@ Example output::
    Groups (0):
 
 ``trx_add_groups`` — Atlas-based parcellation
-----------------------------------------------
+---------------------------------------------
 
 Wraps ``TrxParcellationLabeler`` to assign streamlines to named TRX groups
 from one or more NIfTI segmentation atlases. Each atlas is specified as a
@@ -62,7 +60,7 @@ testing, which increases overlap with streamlines that terminate slightly
 outside parcel boundaries due to registration imprecision.
 
 ``trx_group_tdi`` — Track Density Image
------------------------------------------
+---------------------------------------
 
 Maps streamlines from selected groups onto a reference NIfTI grid, producing
 a voxel-count or weighted-count image.
@@ -86,7 +84,7 @@ Group selection predicates support set-algebra queries:
 scalar values (e.g. SIFT2 weights for quantitative connectivity).
 
 ``trx_extract_subset`` — Extract streamlines
----------------------------------------------
+--------------------------------------------
 
 Extracts streamlines by index list or named group membership and writes a
 compact TRX file. Useful as a bridge between interactive AABB queries and

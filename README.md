@@ -6,9 +6,8 @@ writer backed by `trx-cpp`.
 
 ## Documentation
 
-Developer-facing documentation lives under `Documentation/` and uses the
-ITK/InsightToolkit reStructuredText style. Start with
-`Documentation/Overview.rst`.
+Documentation and benchmark results are available at 
+[ReadTheDocs](https://itktractographytrx.readthedocs.io).
 
 ## Build
 

@@ -38,15 +38,8 @@ TRX stores positions in **RAS+** (right-anterior-superior), the convention
 used by NIfTI and most neuroimaging software. ITK uses **LPS+**
 (left-posterior-superior).
 
-TractographyTRX converts between the two transparently. All coordinates
-returned through the public API are in LPS+. The conversion is a sign flip on
-the X and Y axes, applied lazily on first position access.
-
-.. warning::
-
-   Coordinates passed to ``QueryAabb()``, ``GetStreamline()``, and
-   ``TrxStreamWriter::PushStreamline()`` must be in **LPS+**. Passing RAS+
-   coordinates without conversion will produce incorrect results.
+This difference is something that users will never need to know about.
+All ITK-facing functions accept and return LPS+ coordinates.
 
 Core Classes
 ------------

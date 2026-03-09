@@ -7,7 +7,7 @@ with ``pixi run -e cxx build-src``. See ``src/CMakeLists.txt`` for the
 CMake configuration.
 
 Example 1: Reading a TRX File and Inspecting Metadata
-------------------------------------------------------
+-----------------------------------------------------
 
 This program opens a TRX file, prints summary statistics, and lists all named
 groups, DPS fields, and DPV fields. It demonstrates the basic reader pipeline
@@ -56,7 +56,7 @@ and the enumeration API on ``TrxStreamlineData``.
    }
 
 Example 2: Spatial Query with an Axis-Aligned Bounding Box
------------------------------------------------------------
+----------------------------------------------------------
 
 ``QueryAabb()`` selects streamlines whose bounding boxes intersect a region
 of interest specified in LPS+ coordinates and returns the matching streamlines
@@ -98,7 +98,7 @@ TRX file using ``Save()``.
    }
 
 Example 3: Streaming Writer with DPS and DPV Fields
-----------------------------------------------------
+---------------------------------------------------
 
 ``TrxStreamWriter`` is designed for pipelines that generate streamlines
 incrementally. Fields must be declared before the first ``PushStreamline()``
@@ -151,7 +151,7 @@ call to ensure that all arrays in the output archive have matching lengths.
    }
 
 Example 4: Working with Named Groups
--------------------------------------
+------------------------------------
 
 Groups represent named anatomical bundles. Group membership is loaded lazily;
 ``data->GetGroup("CST_left")`` caches the index list on first access.
