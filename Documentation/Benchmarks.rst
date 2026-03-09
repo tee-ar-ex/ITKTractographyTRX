@@ -16,9 +16,8 @@ Data
 ----
 
 The recommended reference dataset is the same HCP-derived TRX file used by
-``trx-cpp``. For local runs:
-
-``/Users/mcieslak/projects/trx-cpp/test-data/10milHCP_dps-sift2.trx``
+``trx-cpp``: a 10-million-streamline tractogram with float16 positions and one
+DPS field (``10milHCP_dps-sift2.trx``). Pass its path via ``--reference``.
 
 Build (standalone)
 ------------------
@@ -103,3 +102,33 @@ Notes on comparison
   interactive viewer behavior.
 * ``run_benchmarks.sh`` now enforces a positive cap; zero/uncapped query runs
   are not used for manuscript figures.
+
+Reference Results
+-----------------
+
+The following figures were produced on an Apple M3 Pro (36 GB RAM, macOS 15)
+using the 10-million-streamline HCP tractogram with float16 positions.
+
+.. figure:: assets/bench/translate_write_runtime.png
+   :alt: Translate+Write runtime comparison
+
+   Translate-and-write runtime across 100k–10M streamlines for ITK,
+   ITK with reusable ``vnl_matrix`` buffer, and raw ``trx-cpp``.
+
+.. figure:: assets/bench/translate_write_memory_footprint.png
+   :alt: Translate+Write peak memory footprint
+
+   Peak resident-memory delta during translate-and-write under matched
+   workloads, up to 10M streamlines.
+
+.. figure:: assets/bench/query_total_runtime.png
+   :alt: AABB query total runtime by tractogram size
+
+   Total runtime for the 20-slab AABB workload across ITK and raw
+   ``trx-cpp``, with a query cap of 500 streamlines per slab.
+
+.. figure:: assets/bench/parcellation_group_overhead.png
+   :alt: Per-group storage overhead
+
+   Group-only storage overhead as a function of streamline count and
+   dilation radius (0/1/2 voxels) for two atlases (Glasser and 4S456).
