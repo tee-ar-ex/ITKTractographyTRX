@@ -5,14 +5,6 @@ TractographyTRX provides ITK support for TRX tractography streamlines, backed by
 ``trx-cpp`` library. The module includes both lazy, queryable access and a
 streaming writer that enforces DPS/DPV synchronization.
 
-Design Goals
-------------
-
-* Preserve TRX's native RAS+ storage while exposing LPS+ coordinates in ITK.
-* Enable lazy access to streamline points and fast subsetting/query operations.
-* Provide a streaming writer that keeps per-streamline/per-vertex metadata in
-  sync without manual bookkeeping.
-
 Key Types
 ---------
 
@@ -22,33 +14,19 @@ Key Types
   extraction.
 
 ``itk::TrxStreamWriter``
-  Streaming TRX writer that ingests ITK streamlines and metadata while enforcing
-  consistent DPS/DPV lengths.
+  Streaming TRX writer that ingests ITK 3d Point vectors (streamlines) and metadata 
+  while enforcing consistent DPS/DPV lengths.
 
 ``itk::TrxStreamlineIO`` / ``itk::TrxStreamlineIOFactory``
   IO and factory integration for ITK's module discovery mechanism.
 
-Build
------
-
-TractographyTRX requires ITK and ``trx-cpp``. The build can fetch ``trx-cpp``
-automatically, or you can make it discoverable via ``trx-cpp_DIR``.
-
-Standalone build (requires ITK):
-
-.. code-block:: bash
-
-  cmake -S . -B build
-  cmake --build build
-
-To build as an ITK remote module, configure ITK with the module enabled and
-``trx-cpp`` discoverable (or allow it to be fetched).
-
 Coordinate Systems
 ------------------
 
-TRX uses RAS+. TractographyTRX preserves that internally and converts to LPS+ when
-returning ITK points. Spatial queries accept LPS+ points and are converted to
+TRX internally uses RAS+ world coordinates: a few sign flips different from ITK's LPS+ coordinates.
+This fact is something that users will never need to know about.
+All ITK-facing functions accept and return LPS+ coordinates.
+Spatial queries accept LPS+ points and are converted to
 RAS+ before being passed into ``trx-cpp``.
 
 Lazy Loading and Queries
@@ -134,10 +112,3 @@ Tests
 
 The basic round-trip test ``itkTrxReadWriteTest`` validates streaming write and
 read-back behavior.
-
-Benchmarks
-----------
-
-Benchmark workflows that mirror the ``trx-cpp`` real-data suite (translate +
-stream write and slab queries) are documented in
-``Documentation/Benchmarks.rst``.
