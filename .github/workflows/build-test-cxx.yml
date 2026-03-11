@@ -64,7 +64,7 @@ jobs:
           cmake -S . -B build-cov \
             -DCMAKE_BUILD_TYPE=Debug \
             -DITK_DIR=${{ github.workspace }}/ITK-build \
-            -DCMAKE_CXX_FLAGS="--coverage -O0" \
+            -DCMAKE_CXX_FLAGS="--coverage -O0 -fprofile-update=atomic" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage"
 
       - name: Build module
@@ -77,7 +77,7 @@ jobs:
         run: |
           lcov --capture --directory build-cov \
                --output-file coverage.info \
-               --ignore-errors mismatch
+               --ignore-errors mismatch,negative
           lcov --extract coverage.info \
                '${{ github.workspace }}/src/*' \
                '${{ github.workspace }}/include/*' \
