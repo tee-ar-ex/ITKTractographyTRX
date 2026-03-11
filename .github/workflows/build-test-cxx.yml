@@ -96,4 +96,6 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          path: coverage_filtered.info
+          files: coverage_filtered.info
+          disable_search: true
+          fail_ci_if_error: false

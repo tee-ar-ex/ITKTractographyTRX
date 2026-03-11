@@ -1,0 +1,32 @@
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%
+    patch:
+      default:
+        target: auto
+
+# Only report coverage for library source files, not headers,
+# tests, examples, or wrapping glue.
+ignore:
+  - "test/**"
+  - "examples/**"
+  - "include/**"
+  - "wrapping/**"
+  - "benchmarks/**"
+
+# Restrict measurement to src/ only.
+# (The lcov --remove step in CI already strips ITK/system/test paths;
+#  this ensures codecov's own UI shows only library code.)
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+
+components:
+  library:
+    paths:
+      - src/**
