@@ -1615,7 +1615,7 @@ TestFloat16Data(const std::string & basePath)
   }
 
   // const GetFloat16Positions — non-null after EnsurePositionsLoaded.
-  const auto * constData = data.GetPointer();
+  const auto * constData = data;
   const auto * f16PtrConst = constData->GetFloat16Positions();
   if (!f16PtrConst || f16PtrConst->empty())
   {
@@ -1744,7 +1744,7 @@ TestFloat64Data(const std::string & basePath)
   }
 
   // const GetFloat64Positions.
-  const auto * constData = data.GetPointer();
+  const auto * constData = data;
   const auto * f64PtrConst = constData->GetFloat64Positions();
   if (!f64PtrConst || f64PtrConst->empty())
   {
