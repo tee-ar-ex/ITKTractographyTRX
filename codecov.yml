@@ -16,14 +16,6 @@ ignore:
   - "wrapping/**"
   - "benchmarks/**"
 
-# Restrict measurement to src/ only.
-# (The lcov --remove step in CI already strips ITK/system/test paths;
-#  this ensures codecov's own UI shows only library code.)
-component_management:
-  default_rules:
-    statuses:
-      - type: project
-        target: auto
 
 components:
   library:
