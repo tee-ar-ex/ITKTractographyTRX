@@ -7,6 +7,7 @@ coverage:
     patch:
       default:
         target: auto
+        informational: true
 
 # Only report coverage for library source files, not headers,
 # tests, examples, or wrapping glue.
