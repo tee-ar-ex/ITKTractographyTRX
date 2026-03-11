@@ -23,29 +23,16 @@ if(NOT trx-cpp_FOUND)
       message(FATAL_ERROR "trx-cpp not found and CMake < 3.11 cannot fetch it. Set trx-cpp_DIR or update CMake.")
     endif()
     include(FetchContent)
-    find_package(ZLIB QUIET)
-    if(NOT ZLIB_FOUND AND ITK_DIR)
-      set(_itk_zlib_include "${ITK_DIR}/Modules/ThirdParty/ZLIB/src")
-      if(EXISTS "${_itk_zlib_include}/zlib.h")
-        set(ZLIB_INCLUDE_DIR "${_itk_zlib_include}" CACHE PATH "ZLIB include dir" FORCE)
-      elseif(EXISTS "${_itk_zlib_include}/itkzlib-ng/zlib.h")
-        set(ZLIB_INCLUDE_DIR "${_itk_zlib_include}/itkzlib-ng" CACHE PATH "ZLIB include dir" FORCE)
-      endif()
-      file(GLOB _itk_zlib_libs
-        "${ITK_DIR}/lib/*zlib*"
-        "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/*zlib*"
-        "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/itkzlib-ng/*zlib*"
-        "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/Release/*zlib*"
-        "${ITK_DIR}/Modules/ThirdParty/ZLIB/src/Debug/*zlib*"
-      )
-      list(FILTER _itk_zlib_libs INCLUDE REGEX ".*\\.(lib|a|so|dylib)$")
-      if(_itk_zlib_libs)
-        list(GET _itk_zlib_libs 0 _itk_zlib_lib)
-        set(ZLIB_LIBRARY "${_itk_zlib_lib}" CACHE FILEPATH "ZLIB library" FORCE)
-      endif()
-      unset(_itk_zlib_include)
-      unset(_itk_zlib_libs)
-      unset(_itk_zlib_lib)
+    # When building as an ITK module, ITKZLIB_LIBRARIES and ITKZLIB_INCLUDE_DIRS
+    # are set by ITK's ZLIB module (an implicit dependency via ITKCommon).
+    # ITKZLIB_INCLUDE_DIRS already contains both the source and binary dirs, so
+    # zconf.h (generated into the binary dir) is covered automatically.
+    if(ITKZLIB_LIBRARIES AND NOT ZLIB_FOUND)
+      set(ZLIB_LIBRARY "${ITKZLIB_LIBRARIES}" CACHE STRING "ZLIB library" FORCE)
+      set(ZLIB_INCLUDE_DIR "${ITKZLIB_INCLUDE_DIRS}" CACHE STRING "ZLIB include dirs" FORCE)
+      set(ZLIB_FOUND TRUE)
+    endif()
+    if(NOT ZLIB_FOUND)
       find_package(ZLIB QUIET)
     endif()
     if(NOT ZLIB_FOUND)
@@ -67,7 +54,13 @@ if(NOT trx-cpp_FOUND)
         set(ZLIB_LIBRARY zlib CACHE STRING "ZLIB library target" FORCE)
       endif()
       if(zlib_SOURCE_DIR)
-        set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" CACHE PATH "ZLIB include dir" FORCE)
+        # zlib.h lives in the source dir; zconf.h is generated into the binary
+        # dir. Both dirs must be on the include path for consumers (e.g. libzip).
+        if(zlib_BINARY_DIR)
+          set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}" CACHE STRING "ZLIB include dirs" FORCE)
+        else()
+          set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" CACHE PATH "ZLIB include dir" FORCE)
+        endif()
       endif()
     endif()
     find_package(libzip QUIET)
@@ -103,21 +96,17 @@ if(NOT trx-cpp_FOUND)
       set(libzip_DIR "${_libzip_binary_dir}" CACHE PATH "FetchContent libzip build dir" FORCE)
       unset(_libzip_binary_dir)
     endif()
-    # Hint Eigen3 for trx-cpp's find_package(Eigen3) via our FindEigen3.cmake
-    if(ITK_SOURCE_DIR AND EXISTS "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
-      set(EIGEN3_INCLUDE_DIR "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
-    elseif(ITK_DIR AND EXISTS "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
-      set(EIGEN3_INCLUDE_DIR "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
-    elseif(ITK_DIR)
-      get_filename_component(_itk_build_parent "${ITK_DIR}" DIRECTORY)
-      set(_itk_source_candidate "${_itk_build_parent}/ITK")
-      if(EXISTS "${_itk_source_candidate}/Modules/ThirdParty/Eigen3/src/itkeigen/Eigen/Dense")
-        set(EIGEN3_INCLUDE_DIR "${_itk_source_candidate}/Modules/ThirdParty/Eigen3/src/itkeigen" CACHE PATH "Eigen3 include dir")
-      endif()
-      unset(_itk_build_parent)
-      unset(_itk_source_candidate)
+    # Create Eigen3::Eigen before trx-cpp needs it.
+    # Follow the pattern documented in ITKEigen3/CMakeLists.txt: when ITK uses
+    # its bundled Eigen3, ITKInternalEigen3_DIR points to an Eigen3Config.cmake
+    # that exposes <Eigen/Core> includes (unlike the ITKEigen3 target itself
+    # which uses <itkeigen/Eigen/Core>).
+    if(NOT TARGET Eigen3::Eigen AND DEFINED ITKInternalEigen3_DIR)
+      set(Eigen3_DIR "${ITKInternalEigen3_DIR}")
+      find_package(Eigen3 QUIET CONFIG)
     endif()
-    # Create Eigen3::Eigen target before trx-cpp needs it
+    # Fallback for standalone builds or ITK_USE_SYSTEM_EIGEN=ON (where
+    # Eigen3::Eigen is already defined by ITK's own find_package call).
     find_package(Eigen3 QUIET)
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(

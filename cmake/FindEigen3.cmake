@@ -19,7 +19,9 @@ if(NOT EIGEN3_INCLUDE_DIR)
 endif()
 
 if(EIGEN3_INCLUDE_DIR)
-  add_library(Eigen3::Eigen INTERFACE IMPORTED)
+  # GLOBAL so the target is visible inside FetchContent-added subdirectories
+  # (CMake 3.24+ scopes IMPORTED targets to the creating directory by default).
+  add_library(Eigen3::Eigen INTERFACE IMPORTED GLOBAL)
   set_target_properties(Eigen3::Eigen PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${EIGEN3_INCLUDE_DIR}"
   )
