@@ -11,13 +11,13 @@
 #--
 #-- ## Compliance Level 4 star (Very high-quality code, perhaps small community dependance)
 #--   - [X] Meets all ITK code style standards
-#--   - [ ] No external requirements beyond those needed by ITK proper
-#--   - [ ] Builds and passes tests on all supported platforms within 1 month of each core tagged release
-#--            - [ ] Windows Shared Library Build with Visual Studio
-#--            - [ ] Mac with clang compiller
-#--            - [ ] Linux with gcc compiler
+#--   - [ ] No external requirements beyond those needed by ITK proper // question - libzip and trx-cpp are added via cmake. do these count as external dependencies?
+#--   - [X] Builds and passes tests on all supported platforms within 1 month of each core tagged release
+#--            - [X] Windows Shared Library Build with Visual Studio
+#--            - [X] Mac with clang compiller
+#--            - [X] Linux with gcc compiler
 #--   - [X] Active developer community dedicated to maintaining code-base
-#--   - [ ] 75% code coverage demonstrated for testing suite
+#--   - [X] 75% code coverage demonstrated for testing suite
 #--   - [X] Continuous integration testing performed
 #--   - [X] All requirements of Levels 3,2,1
 #--
