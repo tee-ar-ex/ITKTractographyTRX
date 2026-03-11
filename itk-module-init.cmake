@@ -27,7 +27,24 @@ if(NOT trx-cpp_FOUND)
     # are set by ITK's ZLIB module (an implicit dependency via ITKCommon).
     # ITKZLIB_INCLUDE_DIRS already contains both the source and binary dirs, so
     # zconf.h (generated into the binary dir) is covered automatically.
+    #
+    # ITKZLIB_LIBRARIES may be a CMake target name (e.g. "zlib" for the in-tree
+    # bundled build) rather than a file path.  Setting ZLIB_LIBRARY to a target
+    # name causes FindZLIB to create ZLIB::ZLIB as UNKNOWN IMPORTED with
+    # IMPORTED_LOCATION="zlib", which ninja treats as a missing file rather than
+    # a build target.  Pre-create ZLIB::ZLIB as an INTERFACE IMPORTED GLOBAL
+    # target instead; FindZLIB's "NOT TARGET ZLIB::ZLIB" guard then skips its
+    # own (broken) target creation.
     if(ITKZLIB_LIBRARIES AND NOT ZLIB_FOUND)
+      if(NOT TARGET ZLIB::ZLIB)
+        add_library(ZLIB::ZLIB INTERFACE IMPORTED GLOBAL)
+        set_target_properties(ZLIB::ZLIB PROPERTIES
+          INTERFACE_LINK_LIBRARIES  "${ITKZLIB_LIBRARIES}"
+          INTERFACE_INCLUDE_DIRECTORIES "${ITKZLIB_INCLUDE_DIRS}"
+        )
+      endif()
+      # Cache vars so libzip's find_package(ZLIB) sees ZLIB as already found
+      # and respects the ZLIB::ZLIB target we just created.
       set(ZLIB_LIBRARY "${ITKZLIB_LIBRARIES}" CACHE STRING "ZLIB library" FORCE)
       set(ZLIB_INCLUDE_DIR "${ITKZLIB_INCLUDE_DIRS}" CACHE STRING "ZLIB include dirs" FORCE)
       set(ZLIB_FOUND TRUE)
