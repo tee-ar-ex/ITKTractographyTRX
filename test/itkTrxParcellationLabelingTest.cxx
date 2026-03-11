@@ -839,8 +839,9 @@ TestMultipleAtlases(const std::string &                  niftiPath,
     }
   }
 
-  // Atlas 2 region covers (8-10, 8-10, 8-10).  Streamline 1 has a point at (9,9,9)
-  // → should be in MA2_Region_C; streamlines 0 and 2 should not.
+  // Atlas 2 region covers (8-10, 8-10, 8-10).
+  // Streamline 1 passes through (9,9,9) and streamline 2 also passes through (9,9,9),
+  // so both should be in MA2_Region_C.  Streamline 0 stays in (0.5-6) range → not in it.
   if (ok)
   {
     auto grp = d->GetGroup("MA2_Region_C");
@@ -851,9 +852,9 @@ TestMultipleAtlases(const std::string &                  niftiPath,
     }
     auto idx = grp->GetStreamlineIndices();
     std::sort(idx.begin(), idx.end());
-    if (idx != std::vector<uint32_t>{ 1 })
+    if (idx != (std::vector<uint32_t>{ 1, 2 }))
     {
-      std::cerr << "FAIL: MA2_Region_C should contain only streamline 1\n";
+      std::cerr << "FAIL: MA2_Region_C should contain streamlines 1 and 2\n";
       ok = false;
     }
   }
