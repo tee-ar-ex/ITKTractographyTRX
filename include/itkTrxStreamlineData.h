@@ -418,18 +418,6 @@ private:
   using PositionStorageType = std::variant<std::vector<Eigen::half>, std::vector<float>, std::vector<double>>;
 
   void
-  SetPositions(std::vector<Eigen::half> && positions);
-
-  void
-  SetPositions(std::vector<float> && positions);
-
-  void
-  SetPositions(std::vector<double> && positions);
-
-  void
-  UpdateVertexCount();
-
-  void
   EnsureOffsetsSentinel();
 
   void

@@ -45,6 +45,8 @@
 #include "itkTrxStreamWriter.h"
 #include "itkTrxStreamlineData.h"
 
+#include <trx/trx.h>
+
 #include "itkImage.h"
 #include "itkImageFileWriter.h"
 #include "itkNiftiImageIO.h"
@@ -1501,6 +1503,358 @@ TestParcellationCopyThrough(const std::string & basePath)
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// 11. Float16 and Float64 TRX loading — covers typed handle specializations,
+//     EnsurePositionsLoaded branches, and coordinate-typed visit lambdas.
+// ---------------------------------------------------------------------------
+
+static bool
+WriteTypedTrx(const std::string & path, trx::TrxScalarType dtype)
+{
+  trx::TrxStream stream;
+  Eigen::Matrix4f identity = Eigen::Matrix4f::Identity();
+  stream.set_voxel_to_rasmm(identity);
+  stream.set_dimensions({ 20u, 20u, 20u });
+  stream.push_streamline(std::vector<std::array<float, 3>>{ { { 1.0f, 2.0f, 3.0f } },
+                                                             { { 4.0f, 5.0f, 6.0f } },
+                                                             { { 7.0f, 8.0f, 9.0f } } });
+  stream.push_streamline(
+    std::vector<std::array<float, 3>>{ { { 10.0f, 11.0f, 12.0f } }, { { 13.0f, 14.0f, 15.0f } } });
+  try
+  {
+    stream.finalize(path, dtype);
+  }
+  catch (const std::exception & e)
+  {
+    std::cerr << "[WriteTypedTrx] finalize threw: " << e.what() << "\n";
+    return false;
+  }
+  return true;
+}
+
+bool
+TestFloat16Data(const std::string & basePath)
+{
+  const std::string f16Path = basePath + "_f16.trx";
+  const std::string savePath = basePath + "_f16_save.trx";
+  Cleanup(f16Path);
+  Cleanup(savePath);
+  struct Guard
+  {
+    std::vector<std::string> paths;
+    ~Guard()
+    {
+      for (const auto & p : paths)
+        Cleanup(p);
+    }
+  } g{ { f16Path, savePath } };
+
+  if (!WriteTypedTrx(f16Path, trx::TrxScalarType::Float16))
+    return false;
+
+  auto reader = itk::TrxFileReader::New();
+  reader->SetFileName(f16Path);
+  reader->Update();
+  auto data = reader->GetOutput();
+  if (!data)
+  {
+    std::cerr << "[Float16Data] null output\n";
+    return false;
+  }
+
+  if (data->GetCoordinateType() != itk::TrxStreamlineData::CoordinateType::Float16)
+  {
+    std::cerr << "[Float16Data] expected Float16 coordinate type\n";
+    return false;
+  }
+  if (!data->HasFloat16Positions())
+  {
+    std::cerr << "[Float16Data] HasFloat16Positions should be true\n";
+    return false;
+  }
+
+  // ForEachStreamlineChunked before positions are loaded — exercises
+  // TypedTrxHandle<half>::ForEachStreamlineRaw via the handle path.
+  {
+    itk::SizeValueType totalVerts = 0;
+    data->ForEachStreamlineChunked(
+      [&](itk::SizeValueType,
+          const void *,
+          itk::SizeValueType count,
+          itk::TrxStreamlineData::CoordinateType,
+          itk::TrxStreamlineData::CoordinateSystem) { totalVerts += count; });
+    if (totalVerts != 5)
+    {
+      std::cerr << "[Float16Data] ForEachStreamlineChunked (handle) vertex count wrong: " << totalVerts << "\n";
+      return false;
+    }
+  }
+
+  // FlipXYInPlace — triggers EnsurePositionsLoaded (Float16 branch) so positions
+  // are loaded into the vector<Eigen::half> variant, then flips X/Y in the half
+  // lambda.  After this call m_PositionsLoaded == true.
+  data->FlipXYInPlace();
+  data->FlipXYInPlace(); // double-flip restores original values
+
+  // ForEachStreamlineChunked AFTER positions are loaded — the visit now reaches
+  // the vector<Eigen::half> lambda instead of the handle path.
+  {
+    itk::SizeValueType totalVerts = 0;
+    data->ForEachStreamlineChunked(
+      [&](itk::SizeValueType,
+          const void *,
+          itk::SizeValueType count,
+          itk::TrxStreamlineData::CoordinateType,
+          itk::TrxStreamlineData::CoordinateSystem) { totalVerts += count; },
+      itk::TrxStreamlineData::CoordinateSystem::LPS);
+    if (totalVerts != 5)
+    {
+      std::cerr << "[Float16Data] ForEachStreamlineChunked (positions) vertex count wrong: " << totalVerts << "\n";
+      return false;
+    }
+  }
+
+  // const GetFloat16Positions — non-null after EnsurePositionsLoaded.
+  const auto * constData = data.GetPointer();
+  const auto * f16PtrConst = constData->GetFloat16Positions();
+  if (!f16PtrConst || f16PtrConst->empty())
+  {
+    std::cerr << "[Float16Data] const GetFloat16Positions returned null or empty\n";
+    return false;
+  }
+
+  // mutable GetFloat16Positions
+  auto * f16PtrMut = data->GetFloat16Positions();
+  if (!f16PtrMut || f16PtrMut->empty())
+  {
+    std::cerr << "[Float16Data] mutable GetFloat16Positions returned null or empty\n";
+    return false;
+  }
+
+  // SubsetStreamlines — calls TypedTrxHandle<half>::SubsetStreamlines.
+  auto subset = data->SubsetStreamlines({ 0u });
+  if (!subset || subset->GetNumberOfStreamlines() != 1)
+  {
+    std::cerr << "[Float16Data] SubsetStreamlines count wrong\n";
+    return false;
+  }
+
+  // GetOrBuildStreamlineAabbs — calls TypedTrxHandle<half>::GetOrBuildStreamlineAabbs.
+  const auto & aabbs = data->GetOrBuildStreamlineAabbs();
+  if (aabbs.size() != 2)
+  {
+    std::cerr << "[Float16Data] AABB count wrong: " << aabbs.size() << "\n";
+    return false;
+  }
+
+  // InvalidateAabbCache on Float16-backed object.
+  data->InvalidateAabbCache();
+
+  // Save — calls TypedTrxHandle<half>::Save.
+  data->Save(savePath, true);
+  auto reader2 = itk::TrxFileReader::New();
+  reader2->SetFileName(savePath);
+  reader2->Update();
+  auto data2 = reader2->GetOutput();
+  if (!data2 || data2->GetNumberOfStreamlines() != 2)
+  {
+    std::cerr << "[Float16Data] Save/reload streamline count wrong\n";
+    return false;
+  }
+
+  return true;
+}
+
+bool
+TestFloat64Data(const std::string & basePath)
+{
+  const std::string f64Path = basePath + "_f64.trx";
+  const std::string savePath = basePath + "_f64_save.trx";
+  Cleanup(f64Path);
+  Cleanup(savePath);
+  struct Guard
+  {
+    std::vector<std::string> paths;
+    ~Guard()
+    {
+      for (const auto & p : paths)
+        Cleanup(p);
+    }
+  } g{ { f64Path, savePath } };
+
+  if (!WriteTypedTrx(f64Path, trx::TrxScalarType::Float64))
+    return false;
+
+  auto reader = itk::TrxFileReader::New();
+  reader->SetFileName(f64Path);
+  reader->Update();
+  auto data = reader->GetOutput();
+  if (!data)
+  {
+    std::cerr << "[Float64Data] null output\n";
+    return false;
+  }
+
+  if (data->GetCoordinateType() != itk::TrxStreamlineData::CoordinateType::Float64)
+  {
+    std::cerr << "[Float64Data] expected Float64 coordinate type\n";
+    return false;
+  }
+  if (!data->HasFloat64Positions())
+  {
+    std::cerr << "[Float64Data] HasFloat64Positions should be true\n";
+    return false;
+  }
+
+  // ForEachStreamlineChunked (handle path) — TypedTrxHandle<double>::ForEachStreamlineRaw.
+  {
+    itk::SizeValueType totalVerts = 0;
+    data->ForEachStreamlineChunked(
+      [&](itk::SizeValueType,
+          const void *,
+          itk::SizeValueType count,
+          itk::TrxStreamlineData::CoordinateType,
+          itk::TrxStreamlineData::CoordinateSystem) { totalVerts += count; });
+    if (totalVerts != 5)
+    {
+      std::cerr << "[Float64Data] ForEachStreamlineChunked (handle) vertex count wrong: " << totalVerts << "\n";
+      return false;
+    }
+  }
+
+  // FlipXYInPlace — EnsurePositionsLoaded Float64 branch + double visit lambda.
+  data->FlipXYInPlace();
+  data->FlipXYInPlace();
+
+  // ForEachStreamlineChunked AFTER positions loaded — double visit lambda.
+  {
+    itk::SizeValueType totalVerts = 0;
+    data->ForEachStreamlineChunked(
+      [&](itk::SizeValueType,
+          const void *,
+          itk::SizeValueType count,
+          itk::TrxStreamlineData::CoordinateType,
+          itk::TrxStreamlineData::CoordinateSystem) { totalVerts += count; },
+      itk::TrxStreamlineData::CoordinateSystem::LPS);
+    if (totalVerts != 5)
+    {
+      std::cerr << "[Float64Data] ForEachStreamlineChunked (positions) vertex count wrong: " << totalVerts << "\n";
+      return false;
+    }
+  }
+
+  // const GetFloat64Positions.
+  const auto * constData = data.GetPointer();
+  const auto * f64PtrConst = constData->GetFloat64Positions();
+  if (!f64PtrConst || f64PtrConst->empty())
+  {
+    std::cerr << "[Float64Data] const GetFloat64Positions returned null or empty\n";
+    return false;
+  }
+
+  // mutable GetFloat64Positions.
+  auto * f64PtrMut = data->GetFloat64Positions();
+  if (!f64PtrMut || f64PtrMut->empty())
+  {
+    std::cerr << "[Float64Data] mutable GetFloat64Positions returned null or empty\n";
+    return false;
+  }
+
+  // SubsetStreamlines — TypedTrxHandle<double>::SubsetStreamlines.
+  auto subset = data->SubsetStreamlines({ 0u });
+  if (!subset || subset->GetNumberOfStreamlines() != 1)
+  {
+    std::cerr << "[Float64Data] SubsetStreamlines count wrong\n";
+    return false;
+  }
+
+  // GetOrBuildStreamlineAabbs — TypedTrxHandle<double>::GetOrBuildStreamlineAabbs.
+  const auto & aabbs = data->GetOrBuildStreamlineAabbs();
+  if (aabbs.size() != 2)
+  {
+    std::cerr << "[Float64Data] AABB count wrong: " << aabbs.size() << "\n";
+    return false;
+  }
+
+  // Save — TypedTrxHandle<double>::Save.
+  data->Save(savePath, true);
+  auto reader2 = itk::TrxFileReader::New();
+  reader2->SetFileName(savePath);
+  reader2->Update();
+  auto data2 = reader2->GetOutput();
+  if (!data2 || data2->GetNumberOfStreamlines() != 2)
+  {
+    std::cerr << "[Float64Data] Save/reload streamline count wrong\n";
+    return false;
+  }
+
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// 12. PrintSelf coverage for TrxStreamlineData, TrxGroupTdiMapper, and
+//     TrxParcellationLabeler.
+// ---------------------------------------------------------------------------
+
+bool
+TestPrintSelfMethods(const std::string & basePath)
+{
+  // TrxStreamlineData::PrintSelf — via a loaded file
+  const std::string srcPath = basePath + "_ps_sd.trx";
+  Cleanup(srcPath);
+  struct Guard
+  {
+    std::string p;
+    ~Guard() { Cleanup(p); }
+  } g{ srcPath };
+
+  {
+    auto w = itk::TrxStreamWriter::New();
+    w->SetFileName(srcPath);
+    w->SetUseCompression(true);
+    w->SetVoxelToRasMatrix(MakeIdentityRas());
+    w->SetDimensions(MakeDims());
+    w->PushStreamline(MakeSL(0, 2));
+    w->Finalize();
+  }
+
+  auto reader = itk::TrxFileReader::New();
+  reader->SetFileName(srcPath);
+  reader->Update();
+  auto data = reader->GetOutput();
+  if (!data)
+  {
+    std::cerr << "[PrintSelfMethods] null output\n";
+    return false;
+  }
+
+  {
+    std::ostringstream oss;
+    data->Print(oss);
+    if (oss.str().find("NumberOfStreamlines") == std::string::npos)
+    {
+      std::cerr << "[PrintSelfMethods] TrxStreamlineData::PrintSelf missing NumberOfStreamlines\n";
+      return false;
+    }
+  }
+
+  // TrxGroupTdiMapper::PrintSelf — via a freshly created mapper
+  {
+    std::ostringstream oss;
+    itk::TrxGroupTdiMapper::New()->Print(oss);
+    // Just verify it does not throw.
+  }
+
+  // TrxParcellationLabeler::PrintSelf
+  {
+    std::ostringstream oss;
+    itk::TrxParcellationLabeler::New()->Print(oss);
+    // Just verify it does not throw.
+  }
+
+  return true;
+}
+
 } // anonymous namespace
 
 // ---------------------------------------------------------------------------
@@ -1542,6 +1896,9 @@ itkTrxCoverageTest(int argc, char * argv[])
     { "ParcellationDilation", TestParcellationDilation(base) },
     { "ParcellationMultiAtlas", TestParcellationMultiAtlas(base) },
     { "ParcellationCopyThrough", TestParcellationCopyThrough(base) },
+    { "Float16Data", TestFloat16Data(base) },
+    { "Float64Data", TestFloat64Data(base) },
+    { "PrintSelfMethods", TestPrintSelfMethods(base) },
   };
 
   bool allPassed = true;
