@@ -17,3 +17,83 @@ jobs:
         -DModule_ITKEigen3:BOOL=ON
         -DModule_ITKMathematicalMorphology:BOOL=ON
       cmake-options: ""
+
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      ITK_REF: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lcov
+        run: sudo apt-get update && sudo apt-get install -y lcov
+
+      - name: Cache ITK build
+        id: cache-itk
+        uses: actions/cache@v4
+        with:
+          path: ITK-build
+          key: itk-coverage-${{ runner.os }}-${{ env.ITK_REF }}-${{ hashFiles('.github/workflows/build-test-cxx.yml') }}
+
+      - name: Checkout ITK
+        if: steps.cache-itk.outputs.cache-hit != 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: InsightSoftwareConsortium/ITK
+          ref: ${{ env.ITK_REF }}
+          path: ITK
+
+      - name: Configure ITK
+        if: steps.cache-itk.outputs.cache-hit != 'true'
+        run: |
+          cmake -S ITK -B ITK-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DITK_BUILD_DEFAULT_MODULES=OFF \
+            -DITKGroup_Core=ON \
+            -DITKGroup_Transform=ON \
+            -DModule_ITKEigen3=ON \
+            -DModule_ITKMathematicalMorphology=ON \
+            -DBUILD_TESTING=OFF
+
+      - name: Build ITK
+        if: steps.cache-itk.outputs.cache-hit != 'true'
+        run: cmake --build ITK-build --parallel $(nproc)
+
+      - name: Configure module with coverage
+        run: |
+          cmake -S . -B build-cov \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DITK_DIR=${{ github.workspace }}/ITK-build \
+            -DCMAKE_CXX_FLAGS="--coverage -O0" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+
+      - name: Build module
+        run: cmake --build build-cov --parallel $(nproc)
+
+      - name: Run tests
+        run: ctest --test-dir build-cov --output-on-failure
+
+      - name: Generate coverage report
+        run: |
+          lcov --capture --directory build-cov \
+               --output-file coverage.info \
+               --ignore-errors mismatch
+          lcov --remove coverage.info \
+               '/usr/*' \
+               '${{ github.workspace }}/ITK/*' \
+               '${{ github.workspace }}/ITK-build/*' \
+               '*/test/*' \
+               --output-file coverage_filtered.info
+          lcov --list coverage_filtered.info
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage_filtered.info
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          path: coverage_filtered.info
