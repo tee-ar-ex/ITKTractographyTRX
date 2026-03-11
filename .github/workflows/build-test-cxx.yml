@@ -36,7 +36,6 @@ jobs:
           key: itk-coverage-${{ runner.os }}-${{ env.ITK_REF }}-${{ hashFiles('.github/workflows/build-test-cxx.yml') }}
 
       - name: Checkout ITK
-        if: steps.cache-itk.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
         with:
           repository: InsightSoftwareConsortium/ITK
