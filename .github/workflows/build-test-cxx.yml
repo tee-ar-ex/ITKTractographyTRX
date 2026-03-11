@@ -78,12 +78,13 @@ jobs:
           lcov --capture --directory build-cov \
                --output-file coverage.info \
                --ignore-errors mismatch
-          lcov --remove coverage.info \
-               '/usr/*' \
-               '${{ github.workspace }}/ITK/*' \
-               '${{ github.workspace }}/ITK-build/*' \
-               '*/test/*' \
+          lcov --extract coverage.info \
+               '${{ github.workspace }}/src/*' \
+               '${{ github.workspace }}/include/*' \
                --output-file coverage_filtered.info
+          # Strip the absolute workspace prefix so codecov can match paths
+          # to repo files (e.g. src/itkTrxFileReader.cxx, not /home/runner/…)
+          sed -i 's|${{ github.workspace }}/||g' coverage_filtered.info
           lcov --list coverage_filtered.info
 
       - name: Upload coverage artifact
