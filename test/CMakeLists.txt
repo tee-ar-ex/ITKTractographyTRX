@@ -70,6 +70,7 @@ set(TractographyTRXTests
   itkTrxGroupTest.cxx
   itkTrxParcellationLabelingTest.cxx
   itkTrxGroupTdiMapperTest.cxx
+  itkTrxCoverageTest.cxx
 )
 
 createtestdriver(TractographyTRX "${TractographyTRX-Test_LIBRARIES}" "${TractographyTRXTests}")
@@ -137,4 +138,12 @@ itk_add_test(
     TractographyTRXTestDriver
     itkTrxGroupTdiMapperTest
     ${ITK_TEST_OUTPUT_DIR}/trx_group_tdi
+)
+
+itk_add_test(
+  NAME itkTrxCoverageTest
+  COMMAND
+    TractographyTRXTestDriver
+    itkTrxCoverageTest
+    ${ITK_TEST_OUTPUT_DIR}/trx_coverage
 )

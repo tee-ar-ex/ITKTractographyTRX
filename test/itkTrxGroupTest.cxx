@@ -704,6 +704,183 @@ TestGroupRoundTrip(const std::string & basePath)
 }
 
 // -----------------------------------------------------------------------
+// Test 8: PrintSelf coverage — exercises the DpgFields loop in PrintSelf
+// -----------------------------------------------------------------------
+bool
+TestGroupPrintSelf(const std::string & basePath)
+{
+  const std::string writePath = basePath + "_ps_base.trx";
+  const std::string outputPath = basePath + "_ps.trx";
+  CleanupPath(writePath);
+  CleanupPath(outputPath);
+  struct Guard
+  {
+    std::vector<std::string> paths;
+    ~Guard()
+    {
+      for (const auto & p : paths)
+        CleanupPath(p);
+    }
+  } guard{ { writePath, outputPath } };
+
+  // Write two groups via TrxStreamWriter.
+  {
+    auto writer = itk::TrxStreamWriter::New();
+    writer->SetFileName(writePath);
+    writer->SetUseCompression(true);
+    writer->SetVoxelToRasMatrix(MakeIdentityRas());
+    writer->SetDimensions(MakeDims());
+    writer->PushStreamline(MakeStreamline(0, 3), {}, {}, { "BundleA" });
+    writer->PushStreamline(MakeStreamline(10, 2), {}, {}, { "BundleB" });
+    writer->Finalize();
+  }
+
+  // Add a DPG "score" field via trx-cpp so PrintSelf has a field to iterate.
+  {
+    auto trx = trx::load<float>(writePath);
+    if (!trx)
+    {
+      std::cerr << "[GroupPrintSelf] Failed to load with trx::load.\n";
+      return false;
+    }
+    std::vector<float> sA = { 0.9f };
+    std::vector<float> sB = { 0.3f };
+    trx->add_dpg_from_vector("BundleA", "score", "float32", sA, 1, 1);
+    trx->add_dpg_from_vector("BundleB", "score", "float32", sB, 1, 1);
+    trx->save(outputPath);
+  }
+
+  auto reader = itk::TrxFileReader::New();
+  reader->SetFileName(outputPath);
+  reader->Update();
+  auto data = reader->GetOutput();
+  if (!data)
+  {
+    std::cerr << "[GroupPrintSelf] Failed to read output.\n";
+    return false;
+  }
+
+  auto groupA = data->GetGroup("BundleA");
+  if (!groupA)
+  {
+    std::cerr << "[GroupPrintSelf] GetGroup('BundleA') returned nullptr.\n";
+    return false;
+  }
+
+  // Exercise PrintSelf via the itk::Object::Print() method.
+  std::ostringstream oss;
+  groupA->Print(oss);
+  const std::string output = oss.str();
+
+  if (output.find("BundleA") == std::string::npos)
+  {
+    std::cerr << "[GroupPrintSelf] PrintSelf output missing group name 'BundleA'.\n";
+    return false;
+  }
+  if (output.find("score") == std::string::npos)
+  {
+    std::cerr << "[GroupPrintSelf] PrintSelf output missing DPG field name 'score'.\n";
+    return false;
+  }
+  if (output.find("StreamlineCount") == std::string::npos)
+  {
+    std::cerr << "[GroupPrintSelf] PrintSelf output missing StreamlineCount.\n";
+    return false;
+  }
+
+  return true;
+}
+
+// -----------------------------------------------------------------------
+// Test 9: GetDpgFieldNames — exercises TrxGroup::GetDpgFieldNames()
+// -----------------------------------------------------------------------
+bool
+TestGroupGetDpgFieldNames(const std::string & basePath)
+{
+  const std::string writePath = basePath + "_dpgnames_base.trx";
+  const std::string outputPath = basePath + "_dpgnames.trx";
+  CleanupPath(writePath);
+  CleanupPath(outputPath);
+  struct Guard
+  {
+    std::vector<std::string> paths;
+    ~Guard()
+    {
+      for (const auto & p : paths)
+        CleanupPath(p);
+    }
+  } guard{ { writePath, outputPath } };
+
+  // Write a group and attach two DPG fields so GetDpgFieldNames returns >1 entry.
+  {
+    auto writer = itk::TrxStreamWriter::New();
+    writer->SetFileName(writePath);
+    writer->SetUseCompression(true);
+    writer->SetVoxelToRasMatrix(MakeIdentityRas());
+    writer->SetDimensions(MakeDims());
+    writer->PushStreamline(MakeStreamline(0, 2), {}, {}, { "Bundle" });
+    writer->Finalize();
+  }
+
+  {
+    auto trx = trx::load<float>(writePath);
+    if (!trx)
+    {
+      std::cerr << "[GetDpgFieldNames] Failed to load base file.\n";
+      return false;
+    }
+    std::vector<float> alpha = { 0.5f };
+    std::vector<float> beta = { 1.2f };
+    trx->add_dpg_from_vector("Bundle", "alpha", "float32", alpha, 1, 1);
+    trx->add_dpg_from_vector("Bundle", "beta", "float32", beta, 1, 1);
+    trx->save(outputPath);
+  }
+
+  auto reader = itk::TrxFileReader::New();
+  reader->SetFileName(outputPath);
+  reader->Update();
+  auto data = reader->GetOutput();
+  if (!data)
+  {
+    std::cerr << "[GetDpgFieldNames] Failed to read output.\n";
+    return false;
+  }
+
+  auto group = data->GetGroup("Bundle");
+  if (!group)
+  {
+    std::cerr << "[GetDpgFieldNames] GetGroup('Bundle') returned nullptr.\n";
+    return false;
+  }
+
+  const auto fieldNames = group->GetDpgFieldNames();
+  if (fieldNames.size() != 2)
+  {
+    std::cerr << "[GetDpgFieldNames] Expected 2 DPG field names, got " << fieldNames.size() << "\n";
+    return false;
+  }
+
+  const bool hasAlpha = std::find(fieldNames.begin(), fieldNames.end(), "alpha") != fieldNames.end();
+  const bool hasBeta = std::find(fieldNames.begin(), fieldNames.end(), "beta") != fieldNames.end();
+  if (!hasAlpha || !hasBeta)
+  {
+    std::cerr << "[GetDpgFieldNames] Expected fields 'alpha' and 'beta'.\n";
+    return false;
+  }
+
+  // GetDpgFieldNames on a group with no DPG fields should return empty.
+  auto groupNoFields = itk::TrxGroup::New();
+  const auto emptyNames = groupNoFields->GetDpgFieldNames();
+  if (!emptyNames.empty())
+  {
+    std::cerr << "[GetDpgFieldNames] Expected empty names for group without DPG fields.\n";
+    return false;
+  }
+
+  return true;
+}
+
+// -----------------------------------------------------------------------
 // Test 10: Group connectivity matrix (count and DPS-weighted)
 // -----------------------------------------------------------------------
 bool
@@ -883,6 +1060,18 @@ itkTrxGroupTest(int argc, char * argv[])
 
   std::cerr << "[GroupTest] TestGroupConnectivity" << std::endl;
   if (!TestGroupConnectivity(basePath))
+  {
+    return EXIT_FAILURE;
+  }
+
+  std::cerr << "[GroupTest] TestGroupPrintSelf" << std::endl;
+  if (!TestGroupPrintSelf(basePath))
+  {
+    return EXIT_FAILURE;
+  }
+
+  std::cerr << "[GroupTest] TestGroupGetDpgFieldNames" << std::endl;
+  if (!TestGroupGetDpgFieldNames(basePath))
   {
     return EXIT_FAILURE;
   }

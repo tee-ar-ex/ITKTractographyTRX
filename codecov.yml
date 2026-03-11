@@ -1,0 +1,23 @@
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+# Only report coverage for library source files, not headers,
+# tests, examples, or wrapping glue.
+ignore:
+  - "test/**"
+  - "examples/**"
+  - "include/**"
+  - "wrapping/**"
+  - "benchmarks/**"
+
+
+components:
+  library:
+    paths:
+      - src/**

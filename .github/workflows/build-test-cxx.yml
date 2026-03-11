@@ -36,7 +36,6 @@ jobs:
           key: itk-coverage-${{ runner.os }}-${{ env.ITK_REF }}-${{ hashFiles('.github/workflows/build-test-cxx.yml') }}
 
       - name: Checkout ITK
-        if: steps.cache-itk.outputs.cache-hit != 'true'
         uses: actions/checkout@v4
         with:
           repository: InsightSoftwareConsortium/ITK
@@ -64,7 +63,7 @@ jobs:
           cmake -S . -B build-cov \
             -DCMAKE_BUILD_TYPE=Debug \
             -DITK_DIR=${{ github.workspace }}/ITK-build \
-            -DCMAKE_CXX_FLAGS="--coverage -O0" \
+            -DCMAKE_CXX_FLAGS="--coverage -O0 -fprofile-update=atomic" \
             -DCMAKE_EXE_LINKER_FLAGS="--coverage"
 
       - name: Build module
@@ -77,13 +76,14 @@ jobs:
         run: |
           lcov --capture --directory build-cov \
                --output-file coverage.info \
-               --ignore-errors mismatch
-          lcov --remove coverage.info \
-               '/usr/*' \
-               '${{ github.workspace }}/ITK/*' \
-               '${{ github.workspace }}/ITK-build/*' \
-               '*/test/*' \
+               --ignore-errors mismatch,negative
+          lcov --extract coverage.info \
+               '${{ github.workspace }}/src/*' \
+               '${{ github.workspace }}/include/*' \
                --output-file coverage_filtered.info
+          # Strip the absolute workspace prefix so codecov can match paths
+          # to repo files (e.g. src/itkTrxFileReader.cxx, not /home/runner/…)
+          sed -i 's|${{ github.workspace }}/||g' coverage_filtered.info
           lcov --list coverage_filtered.info
 
       - name: Upload coverage artifact
@@ -96,4 +96,6 @@ jobs:
         uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          path: coverage_filtered.info
+          files: coverage_filtered.info
+          disable_search: true
+          fail_ci_if_error: false
