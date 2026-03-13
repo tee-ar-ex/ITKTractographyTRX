@@ -5,4 +5,5 @@ bench/**/*.json
 !bench/results/bench_trx_itk_realdata.json
 bench/results/plots/**/*.png
 build-*
+!.github/workflows/build-*.yml
 .DS_Store

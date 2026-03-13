@@ -1,0 +1,32 @@
+name: Build, test (Python wrapping)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  check-commit:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - id: check
+        run: |
+          MSG=$(git log -1 --pretty=%B)
+          if echo "$MSG" | grep -qi "python"; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-test-package-python:
+    needs: check-commit
+    if: needs.check-commit.outputs.enabled == 'true'
+    uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-package-python.yml@main
+    with:
+      cmake-options: ""
