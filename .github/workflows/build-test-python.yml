@@ -1,0 +1,33 @@
+name: Build, test (Python wrapping)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  check-commit:
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - id: check
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title }}
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        run: |
+          if echo "$COMMIT_MSG $BRANCH_NAME" | grep -qi "python"; then
+            echo "enabled=true" >> $GITHUB_OUTPUT
+          else
+            echo "enabled=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-test-package-python:
+    needs: check-commit
+    if: needs.check-commit.outputs.enabled == 'true'
+    uses: mattcieslak/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-package-python.yml@main
+    with:
+      cmake-options: ""
+      itk-wheel-tag: "v5.4.5"
+      itk-python-package-tag: "v5.4.5"
