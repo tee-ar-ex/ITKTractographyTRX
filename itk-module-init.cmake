@@ -136,6 +136,9 @@ if(NOT trx-cpp_FOUND)
     FetchContent_MakeAvailable(trx_cpp)
     set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
     unset(_saved_BUILD_SHARED_LIBS)
+    if(TARGET trx)
+      set_target_properties(trx PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    endif()
 
     # Keep fetched concrete targets in ITKTargets so export generation remains
     # valid on every cmake run.  Use a GLOBAL PROPERTY as the guard: unlike a
