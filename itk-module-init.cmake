@@ -137,48 +137,50 @@ if(NOT trx-cpp_FOUND)
     set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
     unset(_saved_BUILD_SHARED_LIBS)
 
-    # Static TractographyTRX links against trx; keep fetched concrete targets in
-    # ITKTargets when they are built in-tree so export generation remains valid.
-    if(NOT _TractographyTRX_fetched_targets_installed)
-      set(_TractographyTRX_install_archive_dir "${ITK_INSTALL_ARCHIVE_DIR}")
-      set(_TractographyTRX_install_library_dir "${ITK_INSTALL_LIBRARY_DIR}")
-      set(_TractographyTRX_install_runtime_dir "${ITK_INSTALL_RUNTIME_DIR}")
-      set(_TractographyTRX_did_install_fetched_targets FALSE)
-      if(NOT _TractographyTRX_install_archive_dir)
-        set(_TractographyTRX_install_archive_dir "lib")
-      endif()
-      if(NOT _TractographyTRX_install_library_dir)
-        set(_TractographyTRX_install_library_dir "lib")
-      endif()
-      if(NOT _TractographyTRX_install_runtime_dir)
-        set(_TractographyTRX_install_runtime_dir "bin")
-      endif()
-      foreach(_fetched_target trx zip)
-        if(TARGET ${_fetched_target})
-          get_target_property(_aliased ${_fetched_target} ALIASED_TARGET)
-          get_target_property(_imported ${_fetched_target} IMPORTED)
-          if(NOT _aliased AND NOT _imported)
-            install(TARGETS ${_fetched_target}
-              EXPORT ITKTargets
-              ARCHIVE DESTINATION ${_TractographyTRX_install_archive_dir}
-              LIBRARY DESTINATION ${_TractographyTRX_install_library_dir}
-              RUNTIME DESTINATION ${_TractographyTRX_install_runtime_dir}
-            )
-            set(_TractographyTRX_did_install_fetched_targets TRUE)
-          endif()
-          unset(_aliased)
-          unset(_imported)
-        endif()
-      endforeach()
-      if(_TractographyTRX_did_install_fetched_targets)
-        set(_TractographyTRX_fetched_targets_installed TRUE CACHE INTERNAL "")
-      endif()
-      unset(_fetched_target)
-      unset(_TractographyTRX_did_install_fetched_targets)
-      unset(_TractographyTRX_install_archive_dir)
-      unset(_TractographyTRX_install_library_dir)
-      unset(_TractographyTRX_install_runtime_dir)
+    # Keep fetched concrete targets in ITKTargets so export generation remains
+    # valid on every cmake run.  Use a GLOBAL PROPERTY as the guard: unlike a
+    # CACHE variable it resets each cmake run (preventing the "not in export
+    # set" error on re-configure), but survives within a single run (preventing
+    # the "included more than once" error when ITK processes this file twice).
+    get_property(_trx_already_installed GLOBAL PROPERTY TractographyTRX_fetched_targets_installed SET)
+    if(_trx_already_installed)
+      unset(_trx_already_installed)
+      return()
     endif()
+    set_property(GLOBAL PROPERTY TractographyTRX_fetched_targets_installed TRUE)
+    unset(_trx_already_installed)
+    set(_TractographyTRX_install_archive_dir "${ITK_INSTALL_ARCHIVE_DIR}")
+    set(_TractographyTRX_install_library_dir "${ITK_INSTALL_LIBRARY_DIR}")
+    set(_TractographyTRX_install_runtime_dir "${ITK_INSTALL_RUNTIME_DIR}")
+    if(NOT _TractographyTRX_install_archive_dir)
+      set(_TractographyTRX_install_archive_dir "lib")
+    endif()
+    if(NOT _TractographyTRX_install_library_dir)
+      set(_TractographyTRX_install_library_dir "lib")
+    endif()
+    if(NOT _TractographyTRX_install_runtime_dir)
+      set(_TractographyTRX_install_runtime_dir "bin")
+    endif()
+    foreach(_fetched_target trx zip)
+      if(TARGET ${_fetched_target})
+        get_target_property(_aliased ${_fetched_target} ALIASED_TARGET)
+        get_target_property(_imported ${_fetched_target} IMPORTED)
+        if(NOT _aliased AND NOT _imported)
+          install(TARGETS ${_fetched_target}
+            EXPORT ITKTargets
+            ARCHIVE DESTINATION ${_TractographyTRX_install_archive_dir}
+            LIBRARY DESTINATION ${_TractographyTRX_install_library_dir}
+            RUNTIME DESTINATION ${_TractographyTRX_install_runtime_dir}
+          )
+        endif()
+        unset(_aliased)
+        unset(_imported)
+      endif()
+    endforeach()
+    unset(_fetched_target)
+    unset(_TractographyTRX_install_archive_dir)
+    unset(_TractographyTRX_install_library_dir)
+    unset(_TractographyTRX_install_runtime_dir)
   else()
     find_package(trx-cpp REQUIRED)
   endif()

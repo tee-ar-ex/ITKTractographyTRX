@@ -1,0 +1,2 @@
+itk_wrap_include("itkTrxFileReader.h")
+itk_wrap_simple_class("itk::TrxFileReader" POINTER)

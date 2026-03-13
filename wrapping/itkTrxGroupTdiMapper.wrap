@@ -1,0 +1,2 @@
+itk_wrap_include("itkTrxGroupTdiMapper.h")
+itk_wrap_simple_class("itk::TrxGroupTdiMapper" POINTER)

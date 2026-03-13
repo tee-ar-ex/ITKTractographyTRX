@@ -1,0 +1,2 @@
+itk_wrap_include("itkTrxParcellationLabeler.h")
+itk_wrap_simple_class("itk::TrxParcellationLabeler" POINTER)

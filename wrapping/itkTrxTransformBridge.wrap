@@ -1,0 +1,53 @@
+# Bridge submodule that exposes TrxStreamlineData::TransformInPlace<TTransform> and
+# TransformInPlaceChunked<TTransform> to Python for AffineTransform and CompositeTransform.
+#
+# This submodule is intentionally separate from itkTrxStreamlineData.wrap.  Adding
+# %import itkAffineTransform.i directly to itkTrxStreamlineData.i would cascade into
+# every module that imports itkTrxStreamlineData.i (FileReader, Group, …), causing
+# compilation failures because those modules lack itkOptimizerParametersD / itkArrayD
+# in their compilation context.  By keeping the import here, and listing this submodule
+# last in WRAPPER_SUBMODULE_ORDER, no other submodule imports the bridge and there is
+# no cascade.
+#
+# Implementation notes:
+#   - %inline %{...%} defines free C++ wrapper functions that are wrapped by SWIG.
+#     Template instantiation is forced here; no changes to the C++ headers are needed.
+#   - Python dispatch methods (TransformInPlace / TransformInPlaceChunked) are added
+#     to itkTrxStreamlineData via %extend %pythoncode in itkTrxStreamlineData.wrap.
+#   - The %{...%} block includes the SwigInterface headers so the itkAffineTransformD3
+#     and itkCompositeTransformD3 typedefs are in scope when the wrapper is compiled.
+
+itk_wrap_include("itkTrxStreamlineData.h")
+itk_wrap_include("itkAffineTransform.h")
+itk_wrap_include("itkCompositeTransform.h")
+
+string(APPEND ITK_WRAP_PYTHON_SWIG_EXT
+"%{\n\
+#include \"itkAffineTransformSwigInterface.h\"\n\
+#include \"itkCompositeTransformSwigInterface.h\"\n\
+#include \"itkTrxGroupSwigInterface.h\"\n\
+#include \"itkTrxStreamlineDataSwigInterface.h\"\n\
+%}\n\
+%import itkAffineTransform.i\n\
+%import itkCompositeTransform.i\n\
+%import itkTrxStreamlineData.i\n\
+%inline %{\n\
+void itkTrxStreamlineData_TransformInPlace_AffineD3(\n\
+    itkTrxStreamlineData * data, itkAffineTransformD3 * t) {\n\
+  data->TransformInPlace(t);\n\
+}\n\
+void itkTrxStreamlineData_TransformInPlaceChunked_AffineD3(\n\
+    itkTrxStreamlineData * data, itkAffineTransformD3 * t, unsigned long chunk) {\n\
+  data->TransformInPlaceChunked(t, chunk);\n\
+}\n\
+void itkTrxStreamlineData_TransformInPlace_CompositeD3(\n\
+    itkTrxStreamlineData * data, itkCompositeTransformD3 * t) {\n\
+  data->TransformInPlace(t);\n\
+}\n\
+void itkTrxStreamlineData_TransformInPlaceChunked_CompositeD3(\n\
+    itkTrxStreamlineData * data, itkCompositeTransformD3 * t, unsigned long chunk) {\n\
+  data->TransformInPlaceChunked(t, chunk);\n\
+}\n\
+%}\n\
+"
+)

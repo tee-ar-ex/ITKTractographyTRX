@@ -1,0 +1,57 @@
+itk_wrap_include("itkTrxStreamlineData.h")
+itk_wrap_simple_class("itk::TrxStreamlineData" POINTER)
+
+# Add Python-level TransformInPlace / TransformInPlaceChunked methods.
+# The actual C++ instantiations live in itkTrxTransformBridge.wrap to avoid
+# cascading %import itkAffineTransform.i into every module that imports
+# itkTrxStreamlineData.i.  The bridge free functions are available at call
+# time via 'import itk' (lazy, safe because modules are fully loaded by then).
+string(APPEND ITK_WRAP_PYTHON_SWIG_EXT
+"%extend itkTrxStreamlineData {\n\
+%pythoncode %{\n\
+    def TransformInPlace(self, transform):\n\
+        \"\"\"Apply a spatial transform to all streamline points in-place.\n\
+\n\
+        Supported transform types:\n\
+          itk.AffineTransform[itk.D, 3]\n\
+          itk.CompositeTransform[itk.D, 3]\n\
+        \"\"\"\n\
+        import itk\n\
+        import itk.itkTrxTransformBridgePython as _b\n\
+        if isinstance(transform, itk.AffineTransform[itk.D, 3]):\n\
+            _b.itkTrxStreamlineData_TransformInPlace_AffineD3(self, transform)\n\
+        elif isinstance(transform, itk.CompositeTransform[itk.D, 3]):\n\
+            _b.itkTrxStreamlineData_TransformInPlace_CompositeD3(self, transform)\n\
+        else:\n\
+            raise TypeError(\n\
+                f\"TransformInPlace: unsupported transform type \"\n\
+                f\"{type(transform).__name__}. \"\n\
+                \"Use itk.AffineTransform[itk.D, 3] or \"\n\
+                \"itk.CompositeTransform[itk.D, 3].\")\n\
+\n\
+    def TransformInPlaceChunked(self, transform, chunkPoints):\n\
+        \"\"\"Apply a spatial transform chunked (memory-efficient for large datasets).\n\
+\n\
+        chunkPoints: number of points per chunk (0 = process all at once).\n\
+        Supported transform types:\n\
+          itk.AffineTransform[itk.D, 3]\n\
+          itk.CompositeTransform[itk.D, 3]\n\
+        \"\"\"\n\
+        import itk\n\
+        import itk.itkTrxTransformBridgePython as _b\n\
+        if isinstance(transform, itk.AffineTransform[itk.D, 3]):\n\
+            _b.itkTrxStreamlineData_TransformInPlaceChunked_AffineD3(\n\
+                self, transform, chunkPoints)\n\
+        elif isinstance(transform, itk.CompositeTransform[itk.D, 3]):\n\
+            _b.itkTrxStreamlineData_TransformInPlaceChunked_CompositeD3(\n\
+                self, transform, chunkPoints)\n\
+        else:\n\
+            raise TypeError(\n\
+                f\"TransformInPlaceChunked: unsupported transform type \"\n\
+                f\"{type(transform).__name__}. \"\n\
+                \"Use itk.AffineTransform[itk.D, 3] or \"\n\
+                \"itk.CompositeTransform[itk.D, 3].\")\n\
+%}\n\
+}\n\
+"
+)
