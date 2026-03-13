@@ -26,7 +26,7 @@ jobs:
   build-test-package-python:
     needs: check-commit
     if: needs.check-commit.outputs.enabled == 'true'
-    uses: mattcieslak/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-package-python.yml@main
+    uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-package-python.yml@main
     with:
       cmake-options: ""
       itk-wheel-tag: "v5.4.5"
