@@ -12,14 +12,12 @@ jobs:
     outputs:
       enabled: ${{ steps.check.outputs.enabled }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 1
       - id: check
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title }}
+          BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
         run: |
-          MSG=$(git log -1 --pretty=%B)
-          if echo "$MSG" | grep -qi "python"; then
+          if echo "$COMMIT_MSG $BRANCH_NAME" | grep -qi "python"; then
             echo "enabled=true" >> $GITHUB_OUTPUT
           else
             echo "enabled=false" >> $GITHUB_OUTPUT
