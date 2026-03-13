@@ -29,3 +29,5 @@ jobs:
     uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-package-python.yml@main
     with:
       cmake-options: ""
+      itk-wheel-tag: "v5.4.5"
+      itk-python-package-tag: "v5.4.5"
