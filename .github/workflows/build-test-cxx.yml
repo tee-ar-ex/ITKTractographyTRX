@@ -10,6 +10,7 @@ jobs:
   build-test-cxx:
     uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-cxx.yml@main
     with:
+      itk-git-tag: "main"  # test with latest version instead of specific tag
       itk-cmake-options: >-
         -DITK_BUILD_DEFAULT_MODULES:BOOL=OFF
         -DITKGroup_Core:BOOL=ON
