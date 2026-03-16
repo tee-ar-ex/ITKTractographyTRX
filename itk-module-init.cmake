@@ -116,11 +116,19 @@ if(NOT trx-cpp_FOUND)
     # Tell trx-cpp which Eigen3 target to use via its TRX_EIGEN3_TARGET variable.
     # ITKEigen3 is a declared DEPENDS of TractographyTRX (itk-module.cmake), so
     # ITKEigen3_LIBRARIES is set by the module system before this file runs.
-    # Passing ITKEigen3_LIBRARIES directly avoids any find_package(Eigen3) inside
-    # trx-cpp that could resolve to a system/Homebrew Eigen with a different ABI.
+    #
+    # IMPORTANT: Only use eigen_internal (new ITK, post-PR#5831) directly.
+    # eigen_internal has $<BUILD_INTERFACE:src/itkeigen/> so #include <Eigen/Core> works.
+    #
+    # Old ITK (pre-PR#5831) sets ITKEigen3_LIBRARIES=ITKInternalEigen3::Eigen, an IMPORTED
+    # target whose include path is src/itkeigen/.. (= src/) — designed for ITK-internal
+    # #include <itkeigen/Eigen/Core>, NOT for external #include <Eigen/Core>.
+    # For old ITK, leave TRX_EIGEN3_TARGET unset so trx-cpp calls find_package(Eigen3),
+    # which finds ITK's installed Eigen3Config.cmake with the correct path. This is the
+    # same behavior as before the TRX_EIGEN3_TARGET mechanism was introduced.
     if(NOT DEFINED TRX_EIGEN3_TARGET)
-      if(DEFINED ITKEigen3_LIBRARIES AND TARGET ${ITKEigen3_LIBRARIES})
-        set(TRX_EIGEN3_TARGET "${ITKEigen3_LIBRARIES}")
+      if("${ITKEigen3_LIBRARIES}" STREQUAL "eigen_internal" AND TARGET eigen_internal)
+        set(TRX_EIGEN3_TARGET "eigen_internal")
       endif()
     endif()
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
