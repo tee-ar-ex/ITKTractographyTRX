@@ -113,18 +113,16 @@ if(NOT trx-cpp_FOUND)
       set(libzip_DIR "${_libzip_binary_dir}" CACHE PATH "FetchContent libzip build dir" FORCE)
       unset(_libzip_binary_dir)
     endif()
-    # Create Eigen3::Eigen before trx-cpp needs it.
-    # Follow the pattern documented in ITKEigen3/CMakeLists.txt: when ITK uses
-    # its bundled Eigen3, ITKInternalEigen3_DIR points to an Eigen3Config.cmake
-    # that exposes <Eigen/Core> includes (unlike the ITKEigen3 target itself
-    # which uses <itkeigen/Eigen/Core>).
-    if(NOT TARGET Eigen3::Eigen AND DEFINED ITKInternalEigen3_DIR)
-      set(Eigen3_DIR "${ITKInternalEigen3_DIR}")
-      find_package(Eigen3 QUIET CONFIG)
+    # Tell trx-cpp which Eigen3 target to use via its TRX_EIGEN3_TARGET variable.
+    # ITKEigen3 is a declared DEPENDS of TractographyTRX (itk-module.cmake), so
+    # ITKEigen3_LIBRARIES is set by the module system before this file runs.
+    # Passing ITKEigen3_LIBRARIES directly avoids any find_package(Eigen3) inside
+    # trx-cpp that could resolve to a system/Homebrew Eigen with a different ABI.
+    if(NOT DEFINED TRX_EIGEN3_TARGET)
+      if(DEFINED ITKEigen3_LIBRARIES AND TARGET ${ITKEigen3_LIBRARIES})
+        set(TRX_EIGEN3_TARGET "${ITKEigen3_LIBRARIES}")
+      endif()
     endif()
-    # Fallback for standalone builds or ITK_USE_SYSTEM_EIGEN=ON (where
-    # Eigen3::Eigen is already defined by ITK's own find_package call).
-    find_package(Eigen3 QUIET)
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
@@ -190,20 +188,6 @@ if(NOT trx-cpp_FOUND)
 endif()
 
 set(TractographyTRX_EXPORT_CODE_COMMON [=[
-# Restore Eigen3::Eigen from ITK's bundled Eigen3.
-# trx is a static private dependency of TractographyTRX and is exported to
-# ITKTargets so that downstream static-linked consumers can link it.  Its own
-# INTERFACE_LINK_LIBRARIES lists Eigen3::Eigen, which CMake validates at
-# generate time in all downstream consumers.  Eigen3Config.cmake is installed
-# alongside ITK into ${ITK_INSTALL_PREFIX}/share; find it there with
-# NO_DEFAULT_PATH so system Eigen3 (e.g. Homebrew) is never used instead.
-if(NOT TARGET Eigen3::Eigen)
-  find_package(Eigen3 QUIET CONFIG
-    PATHS "${ITK_INSTALL_PREFIX}/share"
-    NO_DEFAULT_PATH
-  )
-endif()
-
 # Restore non-ITK third-party targets for downstream consumers.
 # Keep the dependency namespaced (trx-cpp::trx) to avoid exporting a global
 # bare `trx` target from TractographyTRX.
