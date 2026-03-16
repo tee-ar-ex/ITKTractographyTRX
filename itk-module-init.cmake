@@ -129,6 +129,11 @@ if(NOT trx-cpp_FOUND)
     if(NOT DEFINED TRX_EIGEN3_TARGET)
       if("${ITKEigen3_LIBRARIES}" STREQUAL "eigen_internal" AND TARGET eigen_internal)
         set(TRX_EIGEN3_TARGET "eigen_internal")
+      elseif(DEFINED ITKInternalEigen3_DIR AND NOT DEFINED Eigen3_DIR)
+        # Old ITK (pre-PR#5831): ITKInternalEigen3_DIR contains Eigen3Config.cmake.
+        # Set Eigen3_DIR so that trx-cpp's find_package(Eigen3) finds the same
+        # Eigen3 that ITK uses, avoiding ABI mismatches with system/Homebrew Eigen.
+        set(Eigen3_DIR "${ITKInternalEigen3_DIR}")
       endif()
     endif()
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
