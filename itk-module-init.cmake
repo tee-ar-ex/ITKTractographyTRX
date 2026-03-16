@@ -190,6 +190,20 @@ if(NOT trx-cpp_FOUND)
 endif()
 
 set(TractographyTRX_EXPORT_CODE_COMMON [=[
+# Restore Eigen3::Eigen from ITK's bundled Eigen3.
+# trx is a static private dependency of TractographyTRX and is exported to
+# ITKTargets so that downstream static-linked consumers can link it.  Its own
+# INTERFACE_LINK_LIBRARIES lists Eigen3::Eigen, which CMake validates at
+# generate time in all downstream consumers.  Eigen3Config.cmake is installed
+# alongside ITK into ${ITK_INSTALL_PREFIX}/share; find it there with
+# NO_DEFAULT_PATH so system Eigen3 (e.g. Homebrew) is never used instead.
+if(NOT TARGET Eigen3::Eigen)
+  find_package(Eigen3 QUIET CONFIG
+    PATHS "${ITK_INSTALL_PREFIX}/share"
+    NO_DEFAULT_PATH
+  )
+endif()
+
 # Restore non-ITK third-party targets for downstream consumers.
 # Keep the dependency namespaced (trx-cpp::trx) to avoid exporting a global
 # bare `trx` target from TractographyTRX.
