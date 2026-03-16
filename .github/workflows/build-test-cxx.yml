@@ -10,6 +10,7 @@ jobs:
   build-test-cxx:
     uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-cxx.yml@main
     with:
+      itk-git-tag: "main"  # test with latest version instead of specific tag
       itk-cmake-options: >-
         -DITK_BUILD_DEFAULT_MODULES:BOOL=OFF
         -DITKGroup_Core:BOOL=ON
@@ -18,8 +19,6 @@ jobs:
         -DModule_ITKMathematicalMorphology:BOOL=ON
       cmake-options: ""
 
-  # Also test against the latest ITK release branch to catch regressions from
-  # upstream ITK changes (e.g. Eigen3 CMake refactors) before they affect users.
   build-test-cxx-itk-release:
     uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-cxx.yml@main
     with:
