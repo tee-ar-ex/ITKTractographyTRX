@@ -46,6 +46,6 @@ itk_fetch_module(
   "TRX tractography support with lazy streamline access and a streaming writer.
   See the Insight Journal article: https://insight-journal.org/browse/publication/XXXX."
   MODULE_COMPLIANCE_LEVEL 2
-  GIT_REPOSITORY https://github.com/your-org/TractographyTRX.git
+  GIT_REPOSITORY https://github.com/tee-ar-ex/ITKTractographyTRX.git
   GIT_TAG main
   )
