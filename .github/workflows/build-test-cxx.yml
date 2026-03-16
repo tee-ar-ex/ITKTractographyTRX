@@ -18,6 +18,20 @@ jobs:
         -DModule_ITKMathematicalMorphology:BOOL=ON
       cmake-options: ""
 
+  # Also test against the latest ITK release branch to catch regressions from
+  # upstream ITK changes (e.g. Eigen3 CMake refactors) before they affect users.
+  build-test-cxx-itk-release:
+    uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-cxx.yml@main
+    with:
+      itk-git-tag: "release"
+      itk-cmake-options: >-
+        -DITK_BUILD_DEFAULT_MODULES:BOOL=OFF
+        -DITKGroup_Core:BOOL=ON
+        -DITKGroup_Transform:BOOL=ON
+        -DModule_ITKEigen3:BOOL=ON
+        -DModule_ITKMathematicalMorphology:BOOL=ON
+      cmake-options: ""
+
   coverage:
     runs-on: ubuntu-latest
     env:

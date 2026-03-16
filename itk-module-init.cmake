@@ -113,18 +113,29 @@ if(NOT trx-cpp_FOUND)
       set(libzip_DIR "${_libzip_binary_dir}" CACHE PATH "FetchContent libzip build dir" FORCE)
       unset(_libzip_binary_dir)
     endif()
-    # Create Eigen3::Eigen before trx-cpp needs it.
-    # Follow the pattern documented in ITKEigen3/CMakeLists.txt: when ITK uses
-    # its bundled Eigen3, ITKInternalEigen3_DIR points to an Eigen3Config.cmake
-    # that exposes <Eigen/Core> includes (unlike the ITKEigen3 target itself
-    # which uses <itkeigen/Eigen/Core>).
-    if(NOT TARGET Eigen3::Eigen AND DEFINED ITKInternalEigen3_DIR)
-      set(Eigen3_DIR "${ITKInternalEigen3_DIR}")
-      find_package(Eigen3 QUIET CONFIG)
+    # Tell trx-cpp which Eigen3 target to use via its TRX_EIGEN3_TARGET variable.
+    # ITKEigen3 is a declared DEPENDS of TractographyTRX (itk-module.cmake), so
+    # ITKEigen3_LIBRARIES is set by the module system before this file runs.
+    #
+    # IMPORTANT: Only use eigen_internal (new ITK, post-PR#5831) directly.
+    # eigen_internal has $<BUILD_INTERFACE:src/itkeigen/> so #include <Eigen/Core> works.
+    #
+    # Old ITK (pre-PR#5831) sets ITKEigen3_LIBRARIES=ITKInternalEigen3::Eigen, an IMPORTED
+    # target whose include path is src/itkeigen/.. (= src/) — designed for ITK-internal
+    # #include <itkeigen/Eigen/Core>, NOT for external #include <Eigen/Core>.
+    # For old ITK, leave TRX_EIGEN3_TARGET unset so trx-cpp calls find_package(Eigen3),
+    # which finds ITK's installed Eigen3Config.cmake with the correct path. This is the
+    # same behavior as before the TRX_EIGEN3_TARGET mechanism was introduced.
+    if(NOT DEFINED TRX_EIGEN3_TARGET)
+      if("${ITKEigen3_LIBRARIES}" STREQUAL "eigen_internal" AND TARGET eigen_internal)
+        set(TRX_EIGEN3_TARGET "eigen_internal")
+      elseif(DEFINED ITKInternalEigen3_DIR AND NOT DEFINED Eigen3_DIR)
+        # Old ITK (pre-PR#5831): ITKInternalEigen3_DIR contains Eigen3Config.cmake.
+        # Set Eigen3_DIR so that trx-cpp's find_package(Eigen3) finds the same
+        # Eigen3 that ITK uses, avoiding ABI mismatches with system/Homebrew Eigen.
+        set(Eigen3_DIR "${ITKInternalEigen3_DIR}")
+      endif()
     endif()
-    # Fallback for standalone builds or ITK_USE_SYSTEM_EIGEN=ON (where
-    # Eigen3::Eigen is already defined by ITK's own find_package call).
-    find_package(Eigen3 QUIET)
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
