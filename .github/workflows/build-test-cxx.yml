@@ -19,34 +19,10 @@ jobs:
         -DModule_ITKMathematicalMorphology:BOOL=ON
       cmake-options: ""
 
-  build-test-cxx-itk-release:
-    uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-cxx.yml@main
-    with:
-      itk-git-tag: "release"
-      itk-cmake-options: >-
-        -DITK_BUILD_DEFAULT_MODULES:BOOL=OFF
-        -DITKGroup_Core:BOOL=ON
-        -DITKGroup_Transform:BOOL=ON
-        -DModule_ITKEigen3:BOOL=ON
-        -DModule_ITKMathematicalMorphology:BOOL=ON
-      cmake-options: ""
-
-  build-test-cxx-itk-v5:
-    uses: InsightSoftwareConsortium/ITKRemoteModuleBuildTestPackageAction/.github/workflows/build-test-cxx.yml@main
-    with:
-      itk-git-tag: "v5.4.5"
-      itk-cmake-options: >-
-        -DITK_BUILD_DEFAULT_MODULES:BOOL=OFF
-        -DITKGroup_Core:BOOL=ON
-        -DITKGroup_Transform:BOOL=ON
-        -DModule_ITKEigen3:BOOL=ON
-        -DModule_ITKMathematicalMorphology:BOOL=ON
-      cmake-options: ""
-
   coverage:
     runs-on: ubuntu-latest
     env:
-      ITK_REF: release
+      ITK_REF: main
     steps:
       - uses: actions/checkout@v4
 
