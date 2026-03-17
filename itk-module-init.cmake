@@ -45,8 +45,8 @@ if(NOT trx-cpp_FOUND)
       endif()
       # Cache vars so libzip's find_package(ZLIB) sees ZLIB as already found
       # and respects the ZLIB::ZLIB target we just created.
-      set(ZLIB_LIBRARY "${ITKZLIB_LIBRARIES}" CACHE STRING "ZLIB library" FORCE)
-      set(ZLIB_INCLUDE_DIR "${ITKZLIB_INCLUDE_DIRS}" CACHE STRING "ZLIB include dirs" FORCE)
+      set(ZLIB_LIBRARY "${ITKZLIB_LIBRARIES}")
+      set(ZLIB_INCLUDE_DIR "${ITKZLIB_INCLUDE_DIRS}")
       set(ZLIB_FOUND TRUE)
     endif()
     if(NOT ZLIB_FOUND)
@@ -56,27 +56,27 @@ if(NOT trx-cpp_FOUND)
       message(STATUS "ZLIB not found via ITK; fetching v1.3.1")
       set(SKIP_INSTALL_ALL ON)
       set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
-      set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+      set(BUILD_SHARED_LIBS OFF)
       FetchContent_Declare(
         zlib
         GIT_REPOSITORY https://github.com/madler/zlib.git
         GIT_TAG v1.3.1
       )
       FetchContent_MakeAvailable(zlib)
-      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS} CACHE BOOL "" FORCE)
+      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
       unset(_saved_BUILD_SHARED_LIBS)
       if(TARGET zlibstatic)
-        set(ZLIB_LIBRARY zlibstatic CACHE STRING "ZLIB library target" FORCE)
+        set(ZLIB_LIBRARY zlibstatic)
       elseif(TARGET zlib)
-        set(ZLIB_LIBRARY zlib CACHE STRING "ZLIB library target" FORCE)
+        set(ZLIB_LIBRARY zlib)
       endif()
       if(zlib_SOURCE_DIR)
         # zlib.h lives in the source dir; zconf.h is generated into the binary
         # dir. Both dirs must be on the include path for consumers (e.g. libzip).
         if(zlib_BINARY_DIR)
-          set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}" CACHE STRING "ZLIB include dirs" FORCE)
+          set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}")
         else()
-          set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}" CACHE PATH "ZLIB include dir" FORCE)
+          set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}")
         endif()
       endif()
     endif()
@@ -90,18 +90,19 @@ if(NOT trx-cpp_FOUND)
       set(BUILD_DOC OFF)
       # TRX files only use deflate; disable optional codecs to avoid pulling
       # in system bzip2/lzma/zstd as undeclared link dependencies.
-      set(ENABLE_BZIP2 OFF CACHE BOOL "" FORCE)
-      set(ENABLE_LZMA OFF CACHE BOOL "" FORCE)
-      set(ENABLE_ZSTD OFF CACHE BOOL "" FORCE)
+      set(ENABLE_BZIP2 OFF)
+      set(ENABLE_LZMA OFF)
+      set(ENABLE_ZSTD OFF)
+      cmake_policy(SET CMP0077 NEW)
       FetchContent_Declare(
         libzip
         GIT_REPOSITORY https://github.com/nih-at/libzip.git
         GIT_TAG v1.11.4
       )
       set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
-      set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+      set(BUILD_SHARED_LIBS OFF)
       FetchContent_MakeAvailable(libzip)
-      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS} CACHE BOOL "" FORCE)
+      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
       unset(_saved_BUILD_SHARED_LIBS)
       if(TARGET zip)
         set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -110,32 +111,13 @@ if(NOT trx-cpp_FOUND)
       # find_package(libzip) calls (e.g. from trx-cpp) resolve to this version
       # rather than a system installation.
       FetchContent_GetProperties(libzip BINARY_DIR _libzip_binary_dir)
-      set(libzip_DIR "${_libzip_binary_dir}" CACHE PATH "FetchContent libzip build dir" FORCE)
+      set(libzip_DIR "${_libzip_binary_dir}")
       unset(_libzip_binary_dir)
     endif()
     # Tell trx-cpp which Eigen3 target to use via its TRX_EIGEN3_TARGET variable.
-    # ITKEigen3 is a declared DEPENDS of TractographyTRX (itk-module.cmake), so
-    # ITKEigen3 is processed before this file runs.
-    # Targets provided by ITK (post-PR#5831, main / release):
-    #   eigen_internal       — real build target in ITK source/remote-module builds
-    #   ITK::eigen_internal  — namespaced form used in installed or build-tree ITK
-    #   ITK::ITKEigen3Module — public wrapper, fallback for installed builds
-    if(NOT TRX_EIGEN3_TARGET OR NOT TARGET "${TRX_EIGEN3_TARGET}")
-      if(TARGET eigen_internal)
-        set(TRX_EIGEN3_TARGET "eigen_internal")
-      elseif(TARGET ITK::eigen_internal)
-        set(TRX_EIGEN3_TARGET "ITK::eigen_internal")
-      elseif(TARGET ITK::ITKEigen3Module)
-        set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
-      elseif(TARGET Eigen3::Eigen)
-        set(TRX_EIGEN3_TARGET "Eigen3::Eigen")
-      endif()
-    endif()
-    if(TRX_EIGEN3_TARGET)
-      message(STATUS "TractographyTRX: TRX_EIGEN3_TARGET=${TRX_EIGEN3_TARGET}")
-    else()
-      message(STATUS "TractographyTRX: TRX_EIGEN3_TARGET is unset; trx-cpp will search for Eigen3 itself")
-    endif()
+    # ITKEigen3 is a declared DEPENDS (itk-module.cmake) so it is processed first.
+    # ITK::ITKEigen3Module is the designated public wrapper target (post-PR#5831).
+    set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
@@ -201,19 +183,6 @@ if(NOT trx-cpp_FOUND)
 endif()
 
 set(TractographyTRX_EXPORT_CODE_COMMON [=[
-# Restore Eigen3::Eigen from ITK's bundled Eigen3.
-# trx is a static private dependency of TractographyTRX and is exported to
-# ITKTargets so that downstream static-linked consumers can link it.  Its own
-# INTERFACE_LINK_LIBRARIES lists Eigen3::Eigen, which CMake validates at
-# generate time in all downstream consumers.  Eigen3Config.cmake is installed
-# alongside ITK into ${ITK_INSTALL_PREFIX}/share; find it there with
-# NO_DEFAULT_PATH so system Eigen3 (e.g. Homebrew) is never used instead.
-if(NOT TARGET Eigen3::Eigen)
-  find_package(Eigen3 QUIET CONFIG
-    PATHS "${ITK_INSTALL_PREFIX}/share"
-    NO_DEFAULT_PATH
-  )
-endif()
 
 # Restore non-ITK third-party targets for downstream consumers.
 # Keep the dependency namespaced (trx-cpp::trx) to avoid exporting a global
