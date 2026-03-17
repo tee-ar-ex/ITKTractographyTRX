@@ -114,138 +114,11 @@ if(NOT trx-cpp_FOUND)
       unset(_libzip_binary_dir)
     endif()
     # Tell trx-cpp which Eigen3 target to use via its TRX_EIGEN3_TARGET variable.
-    # ITKEigen3 is a declared DEPENDS of TractographyTRX (itk-module.cmake), so the
-    # ITKEigen3 module is processed before this file runs, which means:
     #
-    # TractographyTRX_ITK_EigenExternal — when building inside an ITK source/build
-    #   tree, explicitly map this compatibility target to ITK's bundled headers in
-    #   Modules/ThirdParty/Eigen3/src/itkeigen. That gives third-party code a stable
-    #   external include layout for #include <Eigen/Core>, regardless of how ITK's
-    #   own internal wrapper targets are arranged in a given revision.
-    # eigen_internal — the real build target during some ITK source/remote-module
-    #   builds. Prefer it over wrapper targets when it is known to expose a correct
-    #   external Eigen layout.
-    # ITK::eigen_internal — installed/build-tree namespaced form of the same bundled
-    #   Eigen target.
     # ITK::ITKEigen3Module — the forward-looking public ITK wrapper target. Keep it
     #   as a fallback for standalone builds, but do not rely on it for build-tree
     #   third-party wiring when its include layout may still be ITK-internal.
-    # ITKInternalEigen3_DIR — old ITK (pre-PR#5831 / pre-6.0b02); no eigen_internal.
-    set(_TractographyTRX_have_valid_trx_eigen_target OFF)
-    if(TRX_EIGEN3_TARGET AND TARGET ${TRX_EIGEN3_TARGET})
-      set(_TractographyTRX_have_valid_trx_eigen_target ON)
-    endif()
-    if(NOT _TractographyTRX_have_valid_trx_eigen_target)
-      set(_TractographyTRX_itk_eigen_candidate_dirs
-        "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen"
-        "${ITK_BINARY_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen"
-        "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen"
-      )
-      foreach(_TractographyTRX_itk_eigen_target
-          Eigen3::Eigen
-          eigen_internal
-          ITK::eigen_internal
-          ITK::ITKEigen3Module)
-        if(TARGET ${_TractographyTRX_itk_eigen_target})
-          get_target_property(
-            _TractographyTRX_itk_eigen_target_includes
-            ${_TractographyTRX_itk_eigen_target}
-            INTERFACE_INCLUDE_DIRECTORIES
-          )
-          foreach(_TractographyTRX_itk_eigen_include
-              ${_TractographyTRX_itk_eigen_target_includes})
-            if(_TractographyTRX_itk_eigen_include MATCHES "\\$<BUILD_INTERFACE:([^>]+)>")
-              set(_TractographyTRX_itk_eigen_include "${CMAKE_MATCH_1}")
-            endif()
-            if(_TractographyTRX_itk_eigen_include MATCHES "/itkeigen/\\.\\.$")
-              string(REGEX REPLACE
-                "/itkeigen/\\.\\.$"
-                "/itkeigen"
-                _TractographyTRX_itk_eigen_candidate_dir
-                "${_TractographyTRX_itk_eigen_include}"
-              )
-              list(APPEND _TractographyTRX_itk_eigen_candidate_dirs
-                "${_TractographyTRX_itk_eigen_candidate_dir}")
-            elseif(_TractographyTRX_itk_eigen_include MATCHES "/itkeigen$")
-              list(APPEND _TractographyTRX_itk_eigen_candidate_dirs
-                "${_TractographyTRX_itk_eigen_include}")
-            elseif(_TractographyTRX_itk_eigen_include MATCHES "/src$")
-              list(APPEND _TractographyTRX_itk_eigen_candidate_dirs
-                "${_TractographyTRX_itk_eigen_include}/itkeigen")
-            endif()
-            unset(_TractographyTRX_itk_eigen_candidate_dir)
-          endforeach()
-          unset(_TractographyTRX_itk_eigen_target_includes)
-        endif()
-      endforeach()
-      list(REMOVE_DUPLICATES _TractographyTRX_itk_eigen_candidate_dirs)
-      foreach(_TractographyTRX_itk_eigen_candidate_dir
-          ${_TractographyTRX_itk_eigen_candidate_dirs})
-        if(EXISTS "${_TractographyTRX_itk_eigen_candidate_dir}/Eigen/Core")
-          set(_TractographyTRX_itk_eigen_include_dir
-            "${_TractographyTRX_itk_eigen_candidate_dir}")
-          break()
-        endif()
-      endforeach()
-      if(_TractographyTRX_itk_eigen_include_dir
-          AND NOT TARGET TractographyTRX_ITK_EigenExternal)
-        add_library(TractographyTRX_ITK_EigenExternal INTERFACE IMPORTED GLOBAL)
-        set_target_properties(TractographyTRX_ITK_EigenExternal PROPERTIES
-          INTERFACE_INCLUDE_DIRECTORIES "${_TractographyTRX_itk_eigen_include_dir}"
-        )
-      endif()
-      if(TARGET TractographyTRX_ITK_EigenExternal)
-        # Prefer the compatibility target when building inside ITK so trx-cpp gets
-        # an external Eigen include layout even if ITK already defined Eigen3::Eigen
-        # with ITK-internal include directories.
-        set(TRX_EIGEN3_TARGET "TractographyTRX_ITK_EigenExternal")
-      elseif(TARGET Eigen3::Eigen)
-        set(TRX_EIGEN3_TARGET "Eigen3::Eigen")
-      elseif(TARGET eigen_internal)
-        # Source build (TractographyTRX as an ITK remote module): eigen_internal is
-        # the real build target; ITK:: namespaced targets don't exist at this point.
-        set(TRX_EIGEN3_TARGET "eigen_internal")
-      elseif(TARGET ITK::eigen_internal)
-        # Installed/build-tree ITK that exposes the concrete bundled Eigen target.
-        set(TRX_EIGEN3_TARGET "ITK::eigen_internal")
-      elseif(TARGET ITK::ITKEigen3Module)
-        # Forward-looking public wrapper target. Use it when the concrete bundled
-        # targets are not available.
-        set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
-      elseif(DEFINED ITKInternalEigen3_DIR AND NOT DEFINED Eigen3_DIR)
-        # Old standalone ITK: fall back to ITK's exported Eigen3Config.cmake instead
-        # of permitting a random system Eigen3 to win.
-        set(Eigen3_DIR "${ITKInternalEigen3_DIR}")
-      endif()
-    endif()
-    if(TRX_EIGEN3_TARGET)
-      message(STATUS "TractographyTRX: TRX_EIGEN3_TARGET=${TRX_EIGEN3_TARGET}")
-      if(TARGET ${TRX_EIGEN3_TARGET})
-        get_target_property(
-          _TractographyTRX_selected_eigen_includes
-          ${TRX_EIGEN3_TARGET}
-          INTERFACE_INCLUDE_DIRECTORIES
-        )
-        message(STATUS "TractographyTRX: ${TRX_EIGEN3_TARGET} includes=${_TractographyTRX_selected_eigen_includes}")
-      else()
-        message(STATUS "TractographyTRX: selected Eigen target does not exist yet")
-      endif()
-    else()
-      message(STATUS "TractographyTRX: TRX_EIGEN3_TARGET is unset")
-    endif()
-    if(_TractographyTRX_itk_eigen_include_dir)
-      message(STATUS "TractographyTRX: discovered ITK external Eigen include dir=${_TractographyTRX_itk_eigen_include_dir}")
-    endif()
-    if(Eigen3_DIR)
-      message(STATUS "TractographyTRX: Eigen3_DIR=${Eigen3_DIR}")
-    endif()
-    unset(_TractographyTRX_have_valid_trx_eigen_target)
-    unset(_TractographyTRX_selected_eigen_includes)
-    unset(_TractographyTRX_itk_eigen_include_dir)
-    unset(_TractographyTRX_itk_eigen_include)
-    unset(_TractographyTRX_itk_eigen_target)
-    unset(_TractographyTRX_itk_eigen_candidate_dir)
-    unset(_TractographyTRX_itk_eigen_candidate_dirs)
+    set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
@@ -311,19 +184,6 @@ if(NOT trx-cpp_FOUND)
 endif()
 
 set(TractographyTRX_EXPORT_CODE_COMMON [=[
-# Restore Eigen3::Eigen from ITK's bundled Eigen3.
-# trx is a static private dependency of TractographyTRX and is exported to
-# ITKTargets so that downstream static-linked consumers can link it.  Its own
-# INTERFACE_LINK_LIBRARIES lists Eigen3::Eigen, which CMake validates at
-# generate time in all downstream consumers.  Eigen3Config.cmake is installed
-# alongside ITK into ${ITK_INSTALL_PREFIX}/share; find it there with
-# NO_DEFAULT_PATH so system Eigen3 (e.g. Homebrew) is never used instead.
-if(NOT TARGET Eigen3::Eigen)
-  find_package(Eigen3 QUIET CONFIG
-    PATHS "${ITK_INSTALL_PREFIX}/share"
-    NO_DEFAULT_PATH
-  )
-endif()
 
 # Restore non-ITK third-party targets for downstream consumers.
 # Keep the dependency namespaced (trx-cpp::trx) to avoid exporting a global
