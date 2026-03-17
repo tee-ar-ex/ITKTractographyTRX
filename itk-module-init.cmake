@@ -90,10 +90,14 @@ if(NOT trx-cpp_FOUND)
       set(BUILD_DOC OFF)
       # TRX files only use deflate; disable optional codecs to avoid pulling
       # in system bzip2/lzma/zstd as undeclared link dependencies.
+      # CMAKE_POLICY_DEFAULT_CMP0077 propagates into the subdirectory scope
+      # that FetchContent_MakeAvailable creates, so libzip's option() calls
+      # respect these normal variables (cmake_policy(SET) only covers the
+      # current scope and does not carry into child directory scopes).
+      set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
       set(ENABLE_BZIP2 OFF)
       set(ENABLE_LZMA OFF)
       set(ENABLE_ZSTD OFF)
-      cmake_policy(SET CMP0077 NEW)
       FetchContent_Declare(
         libzip
         GIT_REPOSITORY https://github.com/nih-at/libzip.git
