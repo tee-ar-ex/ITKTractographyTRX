@@ -131,17 +131,68 @@ if(NOT trx-cpp_FOUND)
     #   as a fallback for standalone builds, but do not rely on it for build-tree
     #   third-party wiring when its include layout may still be ITK-internal.
     # ITKInternalEigen3_DIR — old ITK (pre-PR#5831 / pre-6.0b02); no eigen_internal.
-    if(NOT DEFINED TRX_EIGEN3_TARGET)
-      if(ITK_SOURCE_DIR AND NOT TARGET TractographyTRX_ITK_EigenExternal)
-        set(_TractographyTRX_itk_eigen_include_dir
-          "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen")
-        if(EXISTS "${_TractographyTRX_itk_eigen_include_dir}/Eigen/Core")
-          add_library(TractographyTRX_ITK_EigenExternal INTERFACE IMPORTED GLOBAL)
-          set_target_properties(TractographyTRX_ITK_EigenExternal PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES "${_TractographyTRX_itk_eigen_include_dir}"
+    set(_TractographyTRX_have_valid_trx_eigen_target OFF)
+    if(TRX_EIGEN3_TARGET AND TARGET ${TRX_EIGEN3_TARGET})
+      set(_TractographyTRX_have_valid_trx_eigen_target ON)
+    endif()
+    if(NOT _TractographyTRX_have_valid_trx_eigen_target)
+      set(_TractographyTRX_itk_eigen_candidate_dirs
+        "${ITK_SOURCE_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen"
+        "${ITK_BINARY_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen"
+        "${ITK_DIR}/Modules/ThirdParty/Eigen3/src/itkeigen"
+      )
+      foreach(_TractographyTRX_itk_eigen_target
+          Eigen3::Eigen
+          eigen_internal
+          ITK::eigen_internal
+          ITK::ITKEigen3Module)
+        if(TARGET ${_TractographyTRX_itk_eigen_target})
+          get_target_property(
+            _TractographyTRX_itk_eigen_target_includes
+            ${_TractographyTRX_itk_eigen_target}
+            INTERFACE_INCLUDE_DIRECTORIES
           )
+          foreach(_TractographyTRX_itk_eigen_include
+              ${_TractographyTRX_itk_eigen_target_includes})
+            if(_TractographyTRX_itk_eigen_include MATCHES "\\$<BUILD_INTERFACE:([^>]+)>")
+              set(_TractographyTRX_itk_eigen_include "${CMAKE_MATCH_1}")
+            endif()
+            if(_TractographyTRX_itk_eigen_include MATCHES "/itkeigen/\\.\\.$")
+              string(REGEX REPLACE
+                "/itkeigen/\\.\\.$"
+                "/itkeigen"
+                _TractographyTRX_itk_eigen_candidate_dir
+                "${_TractographyTRX_itk_eigen_include}"
+              )
+              list(APPEND _TractographyTRX_itk_eigen_candidate_dirs
+                "${_TractographyTRX_itk_eigen_candidate_dir}")
+            elseif(_TractographyTRX_itk_eigen_include MATCHES "/itkeigen$")
+              list(APPEND _TractographyTRX_itk_eigen_candidate_dirs
+                "${_TractographyTRX_itk_eigen_include}")
+            elseif(_TractographyTRX_itk_eigen_include MATCHES "/src$")
+              list(APPEND _TractographyTRX_itk_eigen_candidate_dirs
+                "${_TractographyTRX_itk_eigen_include}/itkeigen")
+            endif()
+            unset(_TractographyTRX_itk_eigen_candidate_dir)
+          endforeach()
+          unset(_TractographyTRX_itk_eigen_target_includes)
         endif()
-        unset(_TractographyTRX_itk_eigen_include_dir)
+      endforeach()
+      list(REMOVE_DUPLICATES _TractographyTRX_itk_eigen_candidate_dirs)
+      foreach(_TractographyTRX_itk_eigen_candidate_dir
+          ${_TractographyTRX_itk_eigen_candidate_dirs})
+        if(EXISTS "${_TractographyTRX_itk_eigen_candidate_dir}/Eigen/Core")
+          set(_TractographyTRX_itk_eigen_include_dir
+            "${_TractographyTRX_itk_eigen_candidate_dir}")
+          break()
+        endif()
+      endforeach()
+      if(_TractographyTRX_itk_eigen_include_dir
+          AND NOT TARGET TractographyTRX_ITK_EigenExternal)
+        add_library(TractographyTRX_ITK_EigenExternal INTERFACE IMPORTED GLOBAL)
+        set_target_properties(TractographyTRX_ITK_EigenExternal PROPERTIES
+          INTERFACE_INCLUDE_DIRECTORIES "${_TractographyTRX_itk_eigen_include_dir}"
+        )
       endif()
       if(TARGET TractographyTRX_ITK_EigenExternal)
         # Prefer the compatibility target when building inside ITK so trx-cpp gets
@@ -167,6 +218,34 @@ if(NOT trx-cpp_FOUND)
         set(Eigen3_DIR "${ITKInternalEigen3_DIR}")
       endif()
     endif()
+    if(TRX_EIGEN3_TARGET)
+      message(STATUS "TractographyTRX: TRX_EIGEN3_TARGET=${TRX_EIGEN3_TARGET}")
+      if(TARGET ${TRX_EIGEN3_TARGET})
+        get_target_property(
+          _TractographyTRX_selected_eigen_includes
+          ${TRX_EIGEN3_TARGET}
+          INTERFACE_INCLUDE_DIRECTORIES
+        )
+        message(STATUS "TractographyTRX: ${TRX_EIGEN3_TARGET} includes=${_TractographyTRX_selected_eigen_includes}")
+      else()
+        message(STATUS "TractographyTRX: selected Eigen target does not exist yet")
+      endif()
+    else()
+      message(STATUS "TractographyTRX: TRX_EIGEN3_TARGET is unset")
+    endif()
+    if(_TractographyTRX_itk_eigen_include_dir)
+      message(STATUS "TractographyTRX: discovered ITK external Eigen include dir=${_TractographyTRX_itk_eigen_include_dir}")
+    endif()
+    if(Eigen3_DIR)
+      message(STATUS "TractographyTRX: Eigen3_DIR=${Eigen3_DIR}")
+    endif()
+    unset(_TractographyTRX_have_valid_trx_eigen_target)
+    unset(_TractographyTRX_selected_eigen_includes)
+    unset(_TractographyTRX_itk_eigen_include_dir)
+    unset(_TractographyTRX_itk_eigen_include)
+    unset(_TractographyTRX_itk_eigen_target)
+    unset(_TractographyTRX_itk_eigen_candidate_dir)
+    unset(_TractographyTRX_itk_eigen_candidate_dirs)
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
