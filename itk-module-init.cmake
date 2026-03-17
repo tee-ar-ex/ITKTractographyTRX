@@ -117,13 +117,15 @@ if(NOT trx-cpp_FOUND)
     # ITKEigen3 is a declared DEPENDS of TractographyTRX (itk-module.cmake), so the
     # ITKEigen3 module is processed before this file runs, which means:
     #
-    # ITK::ITKEigen3Module — public CMake interface module, present in ITKTargets for
-    #   installed and build-tree ITK (post-6.0b02).  Preferred per ITK module conventions
-    #   (same pattern as ITKTotalVariation / proxTV).
-    # ITK::eigen_internal — present in ITKTargets for installed/build-tree ITK; a
-    #   fallback when ITKEigen3Module is not yet available (6.0b01 era).
     # eigen_internal — the real build target during a source/remote-module build;
-    #   ITK:: namespaced targets do not exist until the install export is generated.
+    #   it is the safest bundled-Eigen target to hand to a third-party library that
+    #   includes <Eigen/Core> directly.
+    # ITK::eigen_internal — installed/build-tree namespaced form of the same bundled
+    #   Eigen target.
+    # ITK::ITKEigen3Module — the forward-looking public ITK wrapper target.  Keep it
+    #   as a fallback, but prefer the concrete bundled targets above when available
+    #   because some ITK revisions expose a wrapper include layout that is suitable for
+    #   ITK's own use but not for external <Eigen/Core> consumers such as trx-cpp.
     # ITKInternalEigen3_DIR — old ITK (pre-PR#5831 / pre-6.0b02); no eigen_internal.
     #
     # Old ITK (pre-PR#5831): eigen_internal does not exist.  ITKInternalEigen3::Eigen
@@ -132,19 +134,17 @@ if(NOT trx-cpp_FOUND)
     #   TRX_EIGEN3_TARGET unset; instead steer trx-cpp's find_package(Eigen3) to
     #   ITK's installed Eigen3Config.cmake which has the correct path.
     if(NOT DEFINED TRX_EIGEN3_TARGET)
-      if(TARGET ITK::ITKEigen3Module)
-        # Preferred: the public CMake interface module target (available in ITKTargets
-        # for both installed and build-tree ITK, post-6.0b02).  This is what
-        # ITKTotalVariation and other remote modules use.
-        set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
-      elseif(TARGET ITK::eigen_internal)
-        # Fallback for installed/build-tree ITK that has ITK::eigen_internal in
-        # ITKTargets but not yet ITK::ITKEigen3Module (6.0b01 era).
-        set(TRX_EIGEN3_TARGET "ITK::eigen_internal")
-      elseif(TARGET eigen_internal)
+      if(TARGET eigen_internal)
         # Source build (TractographyTRX as an ITK remote module): eigen_internal is
         # the real build target; ITK:: namespaced targets don't exist at this point.
         set(TRX_EIGEN3_TARGET "eigen_internal")
+      elseif(TARGET ITK::eigen_internal)
+        # Installed/build-tree ITK that exposes the concrete bundled Eigen target.
+        set(TRX_EIGEN3_TARGET "ITK::eigen_internal")
+      elseif(TARGET ITK::ITKEigen3Module)
+        # Forward-looking public wrapper target. Use it when the concrete bundled
+        # targets are not available.
+        set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
       elseif(DEFINED ITKInternalEigen3_DIR AND NOT DEFINED Eigen3_DIR)
         # Old ITK (pre-PR#5831): ITKInternalEigen3_DIR contains Eigen3Config.cmake.
         # Set Eigen3_DIR so that trx-cpp's find_package(Eigen3) finds the same
