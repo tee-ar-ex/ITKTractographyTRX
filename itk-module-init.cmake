@@ -107,17 +107,22 @@ if(NOT trx-cpp_FOUND)
       if(TARGET zip)
         set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
       endif()
-      # Expose the FetchContent build dir as libzip_DIR so that subsequent
-      # find_package(libzip) calls (e.g. from trx-cpp) resolve to this version
-      # rather than a system installation.
-      FetchContent_GetProperties(libzip BINARY_DIR _libzip_binary_dir)
-      set(libzip_DIR "${_libzip_binary_dir}")
-      unset(_libzip_binary_dir)
     endif()
-    # Tell trx-cpp which Eigen3 target to use via its TRX_EIGEN3_TARGET variable.
-    # ITKEigen3 is a declared DEPENDS (itk-module.cmake) so it is processed first.
-    # ITK::ITKEigen3Module is the designated public wrapper target (post-PR#5831).
+    # Pre-set trx-cpp dependency targets so it skips its own find_package calls
+    # and uses the ITK-provided / already-fetched targets instead.
+    # TRX_EIGEN3_TARGET: ITK::ITKEigen3Module is the public wrapper (post-PR#5831).
     set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
+    # TRX_ZLIB_TARGET: ZLIB::ZLIB was created above from ITKZLIB_LIBRARIES or
+    # find_package(ZLIB). Used by trx-nifti if TRX_ENABLE_NIFTI is ever ON.
+    if(TARGET ZLIB::ZLIB)
+      set(TRX_ZLIB_TARGET ZLIB::ZLIB)
+    endif()
+    # TRX_LIBZIP_TARGET: bare "zip" target is only produced by our own
+    # FetchContent of libzip above; system packages export libzip::zip instead,
+    # so "TARGET zip" reliably identifies our own fetched copy.
+    if(TARGET zip)
+      set(TRX_LIBZIP_TARGET zip)
+    endif()
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
