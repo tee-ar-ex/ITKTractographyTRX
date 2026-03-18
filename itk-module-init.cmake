@@ -23,30 +23,16 @@ if(NOT trx-cpp_FOUND)
       message(FATAL_ERROR "trx-cpp not found and CMake < 3.11 cannot fetch it. Set trx-cpp_DIR or update CMake.")
     endif()
     include(FetchContent)
-    # When building as an ITK module, ITKZLIB_LIBRARIES and ITKZLIB_INCLUDE_DIRS
-    # are set by ITK's ZLIB module (an implicit dependency via ITKCommon).
-    # ITKZLIB_INCLUDE_DIRS already contains both the source and binary dirs, so
-    # zconf.h (generated into the binary dir) is covered automatically.
-    #
-    # ITKZLIB_LIBRARIES may be a CMake target name (e.g. "zlib" for the in-tree
-    # bundled build) rather than a file path.  Setting ZLIB_LIBRARY to a target
-    # name causes FindZLIB to create ZLIB::ZLIB as UNKNOWN IMPORTED with
-    # IMPORTED_LOCATION="zlib", which ninja treats as a missing file rather than
-    # a build target.  Pre-create ZLIB::ZLIB as an INTERFACE IMPORTED GLOBAL
-    # target instead; FindZLIB's "NOT TARGET ZLIB::ZLIB" guard then skips its
-    # own (broken) target creation.
-    if(ITKZLIB_LIBRARIES AND NOT ZLIB_FOUND)
-      if(NOT TARGET ZLIB::ZLIB)
-        add_library(ZLIB::ZLIB INTERFACE IMPORTED GLOBAL)
-        set_target_properties(ZLIB::ZLIB PROPERTIES
-          INTERFACE_LINK_LIBRARIES  "${ITKZLIB_LIBRARIES}"
-          INTERFACE_INCLUDE_DIRECTORIES "${ITKZLIB_INCLUDE_DIRS}"
-        )
-      endif()
-      # Cache vars so libzip's find_package(ZLIB) sees ZLIB as already found
-      # and respects the ZLIB::ZLIB target we just created.
-      set(ZLIB_LIBRARY "${ITKZLIB_LIBRARIES}")
-      set(ZLIB_INCLUDE_DIR "${ITKZLIB_INCLUDE_DIRS}")
+    # When building as an ITK module, ITK::ITKZLIBModule is always available
+    # (ITKZLIB is an implicit dependency of ITKCommon).  Pre-create ZLIB::ZLIB
+    # as an interface alias so libzip's find_package(ZLIB) is satisfied without
+    # probing for library files — which would break when ITK's internal zlib
+    # is a bare build target ("zlib") rather than an on-disk file path.
+    if(TARGET ITK::ITKZLIBModule AND NOT TARGET ZLIB::ZLIB)
+      add_library(ZLIB::ZLIB INTERFACE IMPORTED GLOBAL)
+      set_target_properties(ZLIB::ZLIB PROPERTIES
+        INTERFACE_LINK_LIBRARIES "ITK::ITKZLIBModule"
+      )
       set(ZLIB_FOUND TRUE)
     endif()
     if(NOT ZLIB_FOUND)
@@ -116,9 +102,12 @@ if(NOT trx-cpp_FOUND)
     # and uses the ITK-provided / already-fetched targets instead.
     # TRX_EIGEN3_TARGET: ITK::ITKEigen3Module is the public wrapper (post-PR#5831).
     set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
-    # TRX_ZLIB_TARGET: ZLIB::ZLIB was created above from ITKZLIB_LIBRARIES or
-    # find_package(ZLIB). Used by trx-nifti if TRX_ENABLE_NIFTI is ever ON.
-    if(TARGET ZLIB::ZLIB)
+    # TRX_ZLIB_TARGET: prefer ITK's ZLIB module directly; fall back to
+    # ZLIB::ZLIB synthesized above (find_package or FetchContent path).
+    # Used by trx-nifti if TRX_ENABLE_NIFTI is ever ON.
+    if(TARGET ITK::ITKZLIBModule)
+      set(TRX_ZLIB_TARGET "ITK::ITKZLIBModule")
+    elseif(TARGET ZLIB::ZLIB)
       set(TRX_ZLIB_TARGET ZLIB::ZLIB)
     endif()
     # TRX_LIBZIP_TARGET: bare "zip" target is only produced by our own
