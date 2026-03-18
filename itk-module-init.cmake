@@ -23,98 +23,15 @@ if(NOT trx-cpp_FOUND)
       message(FATAL_ERROR "trx-cpp not found and CMake < 3.11 cannot fetch it. Set trx-cpp_DIR or update CMake.")
     endif()
     include(FetchContent)
-    # When building as an ITK module, ITK::ITKZLIBModule is always available
-    # (ITKZLIB is an implicit dependency of ITKCommon).  Pre-create ZLIB::ZLIB
-    # as an interface alias so libzip's find_package(ZLIB) is satisfied without
-    # probing for library files — which would break when ITK's internal zlib
-    # is a bare build target ("zlib") rather than an on-disk file path.
-    if(TARGET ITK::ITKZLIBModule AND NOT TARGET ZLIB::ZLIB)
-      add_library(ZLIB::ZLIB INTERFACE IMPORTED GLOBAL)
-      set_target_properties(ZLIB::ZLIB PROPERTIES
-        INTERFACE_LINK_LIBRARIES "ITK::ITKZLIBModule"
-      )
-      set(ZLIB_FOUND TRUE)
-    endif()
-    if(NOT ZLIB_FOUND)
-      find_package(ZLIB QUIET)
-    endif()
-    if(NOT ZLIB_FOUND)
-      message(STATUS "ZLIB not found via ITK; fetching v1.3.1")
-      set(SKIP_INSTALL_ALL ON)
-      set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
-      set(BUILD_SHARED_LIBS OFF)
-      FetchContent_Declare(
-        zlib
-        GIT_REPOSITORY https://github.com/madler/zlib.git
-        GIT_TAG v1.3.1
-      )
-      FetchContent_MakeAvailable(zlib)
-      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
-      unset(_saved_BUILD_SHARED_LIBS)
-      if(TARGET zlibstatic)
-        set(ZLIB_LIBRARY zlibstatic)
-      elseif(TARGET zlib)
-        set(ZLIB_LIBRARY zlib)
-      endif()
-      if(zlib_SOURCE_DIR)
-        # zlib.h lives in the source dir; zconf.h is generated into the binary
-        # dir. Both dirs must be on the include path for consumers (e.g. libzip).
-        if(zlib_BINARY_DIR)
-          set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR};${zlib_BINARY_DIR}")
-        else()
-          set(ZLIB_INCLUDE_DIR "${zlib_SOURCE_DIR}")
-        endif()
-      endif()
-    endif()
-    find_package(libzip QUIET)
-    if(NOT libzip_FOUND)
-      message(STATUS "libzip not found; fetching v1.11.4")
-      set(LIBZIP_DO_INSTALL OFF)
-      set(BUILD_TOOLS OFF)
-      set(BUILD_REGRESS OFF)
-      set(BUILD_EXAMPLES OFF)
-      set(BUILD_DOC OFF)
-      # TRX files only use deflate; disable optional codecs to avoid pulling
-      # in system bzip2/lzma/zstd as undeclared link dependencies.
-      # CMAKE_POLICY_DEFAULT_CMP0077 propagates into the subdirectory scope
-      # that FetchContent_MakeAvailable creates, so libzip's option() calls
-      # respect these normal variables (cmake_policy(SET) only covers the
-      # current scope and does not carry into child directory scopes).
-      set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
-      set(ENABLE_BZIP2 OFF)
-      set(ENABLE_LZMA OFF)
-      set(ENABLE_ZSTD OFF)
-      FetchContent_Declare(
-        libzip
-        GIT_REPOSITORY https://github.com/nih-at/libzip.git
-        GIT_TAG v1.11.4
-      )
-      set(_saved_BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS})
-      set(BUILD_SHARED_LIBS OFF)
-      FetchContent_MakeAvailable(libzip)
-      set(BUILD_SHARED_LIBS ${_saved_BUILD_SHARED_LIBS})
-      unset(_saved_BUILD_SHARED_LIBS)
-      if(TARGET zip)
-        set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
-      endif()
-    endif()
     # Pre-set trx-cpp dependency targets so it skips its own find_package calls
-    # and uses the ITK-provided / already-fetched targets instead.
+    # and uses the ITK-provided targets instead.
     # TRX_EIGEN3_TARGET: ITK::ITKEigen3Module is the public wrapper (post-PR#5831).
     set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
-    # TRX_ZLIB_TARGET: prefer ITK's ZLIB module directly; fall back to
-    # ZLIB::ZLIB synthesized above (find_package or FetchContent path).
-    # Used by trx-nifti if TRX_ENABLE_NIFTI is ever ON.
+    # TRX_ZLIB_TARGET: ITK::ITKZLIBModule is always available when building as
+    # an ITK module (ITKZLIB is an implicit dependency of ITKCommon). trx-cpp
+    # bridges this to ZLIB::ZLIB for libzip before fetching libzip itself.
     if(TARGET ITK::ITKZLIBModule)
       set(TRX_ZLIB_TARGET "ITK::ITKZLIBModule")
-    elseif(TARGET ZLIB::ZLIB)
-      set(TRX_ZLIB_TARGET ZLIB::ZLIB)
-    endif()
-    # TRX_LIBZIP_TARGET: bare "zip" target is only produced by our own
-    # FetchContent of libzip above; system packages export libzip::zip instead,
-    # so "TARGET zip" reliably identifies our own fetched copy.
-    if(TARGET zip)
-      set(TRX_LIBZIP_TARGET zip)
     endif()
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
