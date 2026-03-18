@@ -1,6 +1,3 @@
-set(_TractographyTRX_CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake")
-list(PREPEND CMAKE_MODULE_PATH "${_TractographyTRX_CMAKE_MODULE_PATH}")
-
 option(TractographyTRX_FETCH_TRX_CPP "Fetch trx-cpp if not found" ON)
 set(TRX_CPP_GIT_TAG "main" CACHE STRING "trx-cpp git tag")
 
