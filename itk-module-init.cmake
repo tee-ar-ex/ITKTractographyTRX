@@ -27,9 +27,7 @@ if(NOT trx-cpp_FOUND)
     # TRX_ZLIB_TARGET: ITK::ITKZLIBModule is always available when building as
     # an ITK module (ITKZLIB is an implicit dependency of ITKCommon). trx-cpp
     # bridges this to ZLIB::ZLIB for libzip before fetching libzip itself.
-    if(TARGET ITK::ITKZLIBModule)
-      set(TRX_ZLIB_TARGET "ITK::ITKZLIBModule")
-    endif()
+    set(TRX_ZLIB_TARGET "ITK::ITKZLIBModule")
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
