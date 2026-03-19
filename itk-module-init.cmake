@@ -24,10 +24,17 @@ if(NOT trx-cpp_FOUND)
     # and uses the ITK-provided targets instead.
     # TRX_EIGEN3_TARGET: ITK::ITKEigen3Module is the public wrapper (post-PR#5831).
     set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
-    # TRX_ZLIB_TARGET: ITK::ITKZLIBModule is always available when building as
-    # an ITK module (ITKZLIB is an implicit dependency of ITKCommon). trx-cpp
-    # bridges this to ZLIB::ZLIB for libzip before fetching libzip itself.
-    set(TRX_ZLIB_TARGET "ITK::ITKZLIBModule")
+    # TRX_ZLIB_TARGET: select the ZLIB target visible in FetchContent child scopes.
+    # In an in-tree ITK build (e.g. ANTs superbuild), ITKZLIBModule is a regular
+    # globally-visible target; ITK::ITKZLIBModule is a directory-scoped ALIAS
+    # created inside ITKZLIB's add_subdirectory and is not accessible outside it.
+    # Against an installed ITK, find_package(ITK) creates ITK::ITKZLIBModule as
+    # an IMPORTED target that IS visible in subdirectories including FetchContent.
+    if(TARGET ITKZLIBModule)
+      set(TRX_ZLIB_TARGET "ITKZLIBModule")
+    else()
+      set(TRX_ZLIB_TARGET "ITK::ITKZLIBModule")
+    endif()
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
