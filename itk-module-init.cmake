@@ -53,15 +53,19 @@ if(NOT trx-cpp_FOUND)
           INTERFACE_LINK_LIBRARIES "${TRX_ZLIB_TARGET}"
         )
       endif()
-      set(ZLIB_LIBRARY "ZLIB::ZLIB")
-      foreach(_trx_zlib_dir IN LISTS ITKZLIB_INCLUDE_DIRS)
-        if(EXISTS "${_trx_zlib_dir}/zlib.h")
-          set(ZLIB_INCLUDE_DIR "${_trx_zlib_dir}")
-          set(ZLIB_FOUND TRUE)
-          break()
-        endif()
-      endforeach()
-      unset(_trx_zlib_dir)
+      # Pre-populate ZLIB cache variables so libzip's find_package(ZLIB 1.1.2 REQUIRED)
+      # succeeds without needing zlib.h to exist during configure. zlib.h is generated
+      # into the build tree only after the ZLIB build step runs, so FindZLIB's
+      # file-based version detection fails during configure in a fresh build.
+      # We pre-set ZLIB_VERSION_STRING to bypass this: itkzlib-ng (ITK's maintained
+      # zlib fork) is always ≥ 1.3.x, satisfying libzip's ≥ 1.1.2 requirement.
+      # The ZLIB::ZLIB interface target above already exists, so FindZLIB's target
+      # creation block is skipped and libzip links against ITK's bundled zlib correctly.
+      list(GET ITKZLIB_INCLUDE_DIRS 0 _trx_itkzlib_include_dir)
+      set(ZLIB_INCLUDE_DIR "${_trx_itkzlib_include_dir}" CACHE PATH "" FORCE)
+      set(ZLIB_LIBRARY "ZLIB::ZLIB" CACHE STRING "" FORCE)
+      set(ZLIB_VERSION_STRING "1.3.0" CACHE STRING "" FORCE)
+      unset(_trx_itkzlib_include_dir)
 
       find_package(libzip QUIET)
       if(NOT libzip_FOUND)
