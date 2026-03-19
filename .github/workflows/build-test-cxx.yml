@@ -17,6 +17,7 @@ jobs:
         -DITKGroup_Transform:BOOL=ON
         -DModule_ITKEigen3:BOOL=ON
         -DModule_ITKMathematicalMorphology:BOOL=ON
+        -DCMAKE_CXX_FLAGS=-w
       cmake-options: ""
 
   coverage:

@@ -1,33 +1,54 @@
 option(TractographyTRX_FETCH_TRX_CPP "Fetch trx-cpp if not found" ON)
-set(TRX_CPP_GIT_TAG "main" CACHE STRING "trx-cpp git tag")
+set(TRX_CPP_GIT_TAG "a6a523642267cc1208851eb1b1a79a4896dde1da" CACHE STRING "trx-cpp git tag")
 
 find_package(trx-cpp QUIET)
 if(trx-cpp_FOUND)
   message(STATUS "Trx-cpp found via find_package. trx-cpp_DIR=${trx-cpp_DIR}")
-  if(TARGET trx-cpp::trx)
-    get_target_property(_trx_cpp_location trx-cpp::trx IMPORTED_LOCATION)
-    if(_trx_cpp_location)
-      message(STATUS "Trx-cpp imported location: ${_trx_cpp_location}")
-    endif()
-  endif()
 endif()
 if(NOT trx-cpp_FOUND)
   if(TractographyTRX_FETCH_TRX_CPP)
     set(TRX_BUILD_TESTS OFF)
     set(TRX_BUILD_EXAMPLES OFF)
     set(TRX_BUILD_BENCHMARKS OFF)
-    if(CMAKE_VERSION VERSION_LESS 3.11)
-      message(FATAL_ERROR "trx-cpp not found and CMake < 3.11 cannot fetch it. Set trx-cpp_DIR or update CMake.")
-    endif()
     include(FetchContent)
-    # Pre-set trx-cpp dependency targets so it skips its own find_package calls
-    # and uses the ITK-provided targets instead.
-    # TRX_EIGEN3_TARGET: ITK::ITKEigen3Module is the public wrapper (post-PR#5831).
+
+    # Pass ITK-provided Eigen and ZLIB targets so trx-cpp skips its own
+    # find_package calls and uses them directly.
     set(TRX_EIGEN3_TARGET "ITK::ITKEigen3Module")
-    # TRX_ZLIB_TARGET: ITK::ITKZLIBModule is always available when building as
-    # an ITK module (ITKZLIB is an implicit dependency of ITKCommon). trx-cpp
-    # bridges this to ZLIB::ZLIB for libzip before fetching libzip itself.
-    set(TRX_ZLIB_TARGET "ITK::ITKZLIBModule")
+
+    if(TARGET ITKZLIBModule)
+      set(TRX_ZLIB_TARGET "ITKZLIBModule")
+    else()
+      set(TRX_ZLIB_TARGET "ITK::ITKZLIBModule")
+    endif()
+
+    # Bridge ITK's ZLIB to the standard ZLIB::ZLIB target so that libzip's
+    # find_package(ZLIB REQUIRED) finds it when trx-cpp fetches libzip.
+    if(NOT TARGET ZLIB::ZLIB)
+      add_library(ZLIB::ZLIB INTERFACE IMPORTED GLOBAL)
+      set_target_properties(ZLIB::ZLIB PROPERTIES
+        INTERFACE_LINK_LIBRARIES "${TRX_ZLIB_TARGET}"
+      )
+    endif()
+
+    # Pre-populate ZLIB cache variables so FindZLIB succeeds without zlib.h
+    # on disk. In a fresh superbuild, zlib.h is generated into the ITK build
+    # tree only after the ZLIB build step runs — but cmake configure needs
+    # find_package(ZLIB 1.1.2 REQUIRED) to pass first. Setting these cache
+    # vars satisfies FindZLIB's version check; the ZLIB::ZLIB target above
+    # already exists so FindZLIB skips target creation.
+    itk_module_load(ITKZLIB)
+    list(GET ITKZLIB_INCLUDE_DIRS 0 _trx_itkzlib_include_dir)
+    set(ZLIB_INCLUDE_DIR "${_trx_itkzlib_include_dir}" CACHE PATH "" FORCE)
+    set(ZLIB_LIBRARY "ZLIB::ZLIB" CACHE STRING "" FORCE)
+    set(ZLIB_VERSION_STRING "1.3.0" CACHE STRING "" FORCE)
+    unset(_trx_itkzlib_include_dir)
+
+    message(STATUS "TractographyTRX ZLIB bridge: ZLIB_INCLUDE_DIR=${ZLIB_INCLUDE_DIR}")
+    message(STATUS "TractographyTRX ZLIB bridge: ZLIB::ZLIB -> ${TRX_ZLIB_TARGET}")
+
+    # Fetch trx-cpp. It will fetch its own libzip, whose find_package(ZLIB)
+    # will find our pre-populated cache vars and ZLIB::ZLIB target above.
     message(STATUS "trx-cpp not found; fetching ${TRX_CPP_GIT_TAG}")
     FetchContent_Declare(
       trx_cpp
@@ -42,12 +63,28 @@ if(NOT trx-cpp_FOUND)
     if(TARGET trx)
       set_target_properties(trx PROPERTIES POSITION_INDEPENDENT_CODE ON)
     endif()
+    if(TARGET zip)
+      set_target_properties(zip PROPERTIES POSITION_INDEPENDENT_CODE ON)
+      # Replace zip's ZLIB::ZLIB link dependency with the real ITK zlib target.
+      # ZLIB::ZLIB is our bridge target for configure-time find_package(ZLIB),
+      # but it won't exist when a downstream project loads the installed
+      # ITKTargets.cmake. The ITK zlib target (ITKZLIBModule) IS in the export
+      # set and resolves correctly after installation.
+      foreach(_prop LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
+        get_target_property(_libs zip ${_prop})
+        if(_libs)
+          string(REPLACE "ZLIB::ZLIB" "${TRX_ZLIB_TARGET}" _libs "${_libs}")
+          set_target_properties(zip PROPERTIES ${_prop} "${_libs}")
+        endif()
+      endforeach()
+      unset(_libs)
+      unset(_prop)
+    endif()
 
-    # Keep fetched concrete targets in ITKTargets so export generation remains
-    # valid on every cmake run.  Use a GLOBAL PROPERTY as the guard: unlike a
-    # CACHE variable it resets each cmake run (preventing the "not in export
-    # set" error on re-configure), but survives within a single run (preventing
-    # the "included more than once" error when ITK processes this file twice).
+    # Install fetched targets into ITKTargets so the export set is complete.
+    # Guard with a GLOBAL PROPERTY: resets each cmake run (preventing stale
+    # "not in export set" errors) but survives within a run (preventing
+    # duplicate-install errors if this file is processed twice).
     get_property(_trx_already_installed GLOBAL PROPERTY TractographyTRX_fetched_targets_installed SET)
     if(_trx_already_installed)
       unset(_trx_already_installed)
@@ -92,16 +129,15 @@ if(NOT trx-cpp_FOUND)
   endif()
 endif()
 
+# Export code: restore trx-cpp target for downstream consumers (e.g. ANTs)
+# that find_package(ITK COMPONENTS TractographyTRX). The 'trx' and 'zip'
+# targets are in ITKTargets already; we just need the trx-cpp::trx alias.
 set(TractographyTRX_EXPORT_CODE_COMMON [=[
 
-# Restore non-ITK third-party targets for downstream consumers.
-# Keep the dependency namespaced (trx-cpp::trx) to avoid exporting a global
-# bare `trx` target from TractographyTRX.
 if(NOT TARGET trx-cpp::trx)
   find_package(trx-cpp QUIET CONFIG)
 endif()
 
-# Fallback for build-tree consumption where only libtrx exists.
 if(NOT TARGET trx-cpp::trx)
   find_library(_TractographyTRX_trx_library
     NAMES trx
@@ -117,68 +153,7 @@ if(NOT TARGET trx-cpp::trx)
   unset(_TractographyTRX_trx_library CACHE)
   unset(_TractographyTRX_trx_library)
 endif()
-
-# Normalize libzip target aliases expected by trx-cpp across environments.
-if(NOT TARGET libzip::zip)
-  if(TARGET zip::zip)
-    add_library(libzip::zip INTERFACE IMPORTED)
-    set_target_properties(libzip::zip PROPERTIES
-      INTERFACE_LINK_LIBRARIES "zip::zip"
-    )
-  elseif(TARGET zip)
-    add_library(libzip::zip INTERFACE IMPORTED)
-    set_target_properties(libzip::zip PROPERTIES
-      INTERFACE_LINK_LIBRARIES "zip"
-    )
-  else()
-    find_package(libzip QUIET CONFIG)
-    if(NOT TARGET libzip::zip AND NOT TARGET zip::zip AND NOT TARGET zip)
-      find_library(_TractographyTRX_libzip_library NAMES zip libzip)
-      find_path(_TractographyTRX_libzip_include_dir zip.h)
-      if(_TractographyTRX_libzip_library)
-        add_library(libzip::zip UNKNOWN IMPORTED)
-        set_target_properties(libzip::zip PROPERTIES
-          IMPORTED_LOCATION "${_TractographyTRX_libzip_library}"
-        )
-        if(_TractographyTRX_libzip_include_dir)
-          set_target_properties(libzip::zip PROPERTIES
-            INTERFACE_INCLUDE_DIRECTORIES "${_TractographyTRX_libzip_include_dir}"
-          )
-        endif()
-      endif()
-      unset(_TractographyTRX_libzip_library CACHE)
-      unset(_TractographyTRX_libzip_include_dir CACHE)
-      unset(_TractographyTRX_libzip_library)
-      unset(_TractographyTRX_libzip_include_dir)
-    elseif(NOT TARGET libzip::zip AND TARGET zip::zip)
-      add_library(libzip::zip INTERFACE IMPORTED)
-      set_target_properties(libzip::zip PROPERTIES
-        INTERFACE_LINK_LIBRARIES "zip::zip"
-      )
-    elseif(NOT TARGET libzip::zip AND TARGET zip)
-      add_library(libzip::zip INTERFACE IMPORTED)
-      set_target_properties(libzip::zip PROPERTIES
-        INTERFACE_LINK_LIBRARIES "zip"
-      )
-    endif()
-  endif()
-endif()
-
-if(NOT TARGET zip::zip AND TARGET libzip::zip)
-  add_library(zip::zip INTERFACE IMPORTED)
-  set_target_properties(zip::zip PROPERTIES
-    INTERFACE_LINK_LIBRARIES "libzip::zip"
-  )
-endif()
-
-if(NOT TARGET zip AND TARGET libzip::zip)
-  add_library(zip INTERFACE IMPORTED)
-  set_target_properties(zip PROPERTIES
-    INTERFACE_LINK_LIBRARIES "libzip::zip"
-  )
-endif()
 ]=])
 
-# Keep build-tree and install-tree dependency restoration aligned.
 set(TractographyTRX_EXPORT_CODE_BUILD "${TractographyTRX_EXPORT_CODE_COMMON}")
 set(TractographyTRX_EXPORT_CODE_INSTALL "${TractographyTRX_EXPORT_CODE_COMMON}")
