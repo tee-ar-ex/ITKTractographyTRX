@@ -352,7 +352,7 @@ TrxStreamWriter::Finalize()
     m_Stream->push_group_from_indices(kv.first, kv.second);
   }
 
-  const zip_uint32_t compression = m_UseCompression ? ZIP_CM_DEFLATE : ZIP_CM_STORE;
+  const auto compression = m_UseCompression ? trx::TrxCompression::Deflate : trx::TrxCompression::None;
   m_Stream->finalize<float>(m_FileName, compression);
   m_Finalized = true;
 }

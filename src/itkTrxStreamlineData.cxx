@@ -290,7 +290,7 @@ public:
   void
   Save(const std::string & filename, bool useCompression) const override
   {
-    const zip_uint32_t compression = useCompression ? ZIP_CM_DEFLATE : ZIP_CM_STORE;
+    const auto compression = useCompression ? trx::TrxCompression::Deflate : trx::TrxCompression::None;
     m_Trx->save(filename, compression);
   }
 
