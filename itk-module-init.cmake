@@ -1,5 +1,5 @@
 option(TractographyTRX_FETCH_TRX_CPP "Fetch trx-cpp if not found" ON)
-set(TRX_CPP_GIT_TAG "8f54c067cd962d1d13283c5965ee35eac7d9924e" CACHE STRING "trx-cpp git tag")
+set(TRX_CPP_GIT_TAG "f693e7b790a15eac4bd8ce2c8569b302cceb4a1b" CACHE STRING "trx-cpp git tag")
 
 find_package(trx-cpp QUIET)
 if(trx-cpp_FOUND)
