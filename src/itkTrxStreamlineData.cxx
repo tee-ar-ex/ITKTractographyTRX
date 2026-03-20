@@ -96,6 +96,10 @@ public:
   GetDpgField(const std::string & groupName, const std::string & fieldName) const = 0;
   virtual trx::ConnectivityMatrixResult
   ComputeGroupConnectivity(const std::string & dpsFieldName) const = 0;
+  virtual void
+  ForEachPositionsChunk(
+    size_t chunkBytes,
+    const std::function<void(trx::TrxScalarType, const void *, size_t, size_t)> & fn) const = 0;
 };
 
 namespace
@@ -465,6 +469,20 @@ public:
       return m_Trx->compute_group_connectivity(trx::ConnectivityMeasure::StreamlineCount, "");
     }
     return m_Trx->compute_group_connectivity(trx::ConnectivityMeasure::DpsSum, dpsFieldName);
+  }
+
+  void
+  ForEachPositionsChunk(
+    size_t                                                                        chunkBytes,
+    const std::function<void(trx::TrxScalarType, const void *, size_t, size_t)> & fn) const override
+  {
+    const auto & dir = m_Trx->uncompressed_folder_handle();
+    if (dir.empty())
+    {
+      return;
+    }
+    auto any = trx::load_any(dir);
+    any.for_each_positions_chunk(chunkBytes, fn);
   }
 
 private:
@@ -1399,40 +1417,46 @@ TrxStreamlineData::EnsurePositionsLoaded() const
   }
 
   const size_t nbVertices = m_TrxHandle->NumVertices();
+
+  // Chunked bulk-copy of raw RAS positions into a pre-allocated LPS buffer.
+  // Uses for_each_positions_chunk via the handle — O(chunks) virtual calls
+  // instead of O(vertices), with good cache locality on large files.
+  auto chunkLoadLps = [&](auto & out) {
+    using Scalar = typename std::remove_reference_t<decltype(out)>::value_type;
+    out.resize(nbVertices * 3);
+    constexpr size_t kChunkBytes = 64 * 1024 * 1024; // 64 MiB
+    m_TrxHandle->ForEachPositionsChunk(
+      kChunkBytes,
+      [&](trx::TrxScalarType /*dtype*/, const void * data, size_t pointOffset, size_t pointCount) {
+        const auto * src = static_cast<const Scalar *>(data);
+        const size_t base = pointOffset * 3;
+        const size_t n = pointCount * 3;
+        for (size_t v = 0; v < n; v += 3)
+        {
+          // RAS -> LPS: negate x and y
+          out[base + v] = static_cast<Scalar>(-static_cast<double>(src[v]));
+          out[base + v + 1] = static_cast<Scalar>(-static_cast<double>(src[v + 1]));
+          out[base + v + 2] = static_cast<Scalar>(src[v + 2]);
+        }
+      });
+  };
+
   if (m_FileCoordinateType == CoordinateType::Float16)
   {
-    std::vector<Eigen::half> out(nbVertices * 3);
-    for (size_t i = 0; i < nbVertices; ++i)
-    {
-      const PointType point = m_TrxHandle->GetPointLpsAtIndex(static_cast<SizeValueType>(i));
-      out[i * 3] = static_cast<Eigen::half>(point[0]);
-      out[i * 3 + 1] = static_cast<Eigen::half>(point[1]);
-      out[i * 3 + 2] = static_cast<Eigen::half>(point[2]);
-    }
+    std::vector<Eigen::half> out;
+    chunkLoadLps(out);
     m_Positions = std::move(out);
   }
   else if (m_FileCoordinateType == CoordinateType::Float64)
   {
-    std::vector<double> out(nbVertices * 3);
-    for (size_t i = 0; i < nbVertices; ++i)
-    {
-      const PointType point = m_TrxHandle->GetPointLpsAtIndex(static_cast<SizeValueType>(i));
-      out[i * 3] = point[0];
-      out[i * 3 + 1] = point[1];
-      out[i * 3 + 2] = point[2];
-    }
+    std::vector<double> out;
+    chunkLoadLps(out);
     m_Positions = std::move(out);
   }
   else
   {
-    std::vector<float> out(nbVertices * 3);
-    for (size_t i = 0; i < nbVertices; ++i)
-    {
-      const PointType point = m_TrxHandle->GetPointLpsAtIndex(static_cast<SizeValueType>(i));
-      out[i * 3] = static_cast<float>(point[0]);
-      out[i * 3 + 1] = static_cast<float>(point[1]);
-      out[i * 3 + 2] = static_cast<float>(point[2]);
-    }
+    std::vector<float> out;
+    chunkLoadLps(out);
     m_Positions = std::move(out);
   }
 
