@@ -134,6 +134,13 @@ endif()
 # targets are in ITKTargets already; we just need the trx-cpp::trx alias.
 set(TractographyTRX_EXPORT_CODE_COMMON [=[
 
+# Some libzip builds used by trx-cpp link against OpenSSL. Load it here so
+# downstream consumers that request TractographyTRX via find_package(ITK ...)
+# get the imported OpenSSL targets before ITKTargets.cmake is included.
+if(NOT TARGET OpenSSL::SSL OR NOT TARGET OpenSSL::Crypto)
+  find_package(OpenSSL QUIET)
+endif()
+
 if(NOT TARGET trx-cpp::trx)
   find_package(trx-cpp QUIET CONFIG)
 endif()
