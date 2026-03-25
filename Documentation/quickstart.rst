@@ -80,13 +80,17 @@ requires ITK built with TractographyTRX enabled:
      return EXIT_SUCCESS;
    }
 
-Link against ``ITKTractographyTRX`` and ``ITKCommon`` in your
+Link against the TractographyTRX and ITK Common module targets in your
 ``CMakeLists.txt``:
 
 .. code-block:: cmake
 
    find_package(ITK REQUIRED COMPONENTS ITKCommon TractographyTRX)
-   include(${ITK_USE_FILE})
+   itk_generate_factory_registration()
 
    add_executable(hello_trx hello_trx.cxx)
-   target_link_libraries(hello_trx ${ITK_LIBRARIES})
+   target_link_libraries(hello_trx
+     PRIVATE
+       ITK::ITKCommonModule
+       ITK::TractographyTRXModule
+   )
